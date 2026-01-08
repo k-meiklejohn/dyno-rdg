@@ -1,6 +1,9 @@
 pos,type,prob,drop_prob
 -1,5cap,1,0
-3,init,0.5,0.01
-6,shift-1,0.5,0
-9,stop,0,1
-10,end,0,1
+105,init,0.5,0
+154,init,0.5,0
+203,init,1,0
+389,stop,0,1
+784,stop,0,1
+2502,stop,0,1
+2545,end,0,1

@@ -1,4 +1,6 @@
 pos,type,prob,drop_prob
--1,5cap,1,0
-500,ires,1,0
-2545,end,0,1
+-1,5cap,0.2,0
+50,init,1,0
+100,init,0.5,0
+100,ires,1,0
+1000,end,0,1

@@ -66,13 +66,11 @@ jobs:
             --output-filename=${{ matrix.output }} \
             app_tk.py
 
-      - name: Install Windows deps
-        if: runner.os == 'Windows'
-        run: |
-          pip install depends-exe
 
       - name: Build Windows
         if: runner.os == 'Windows'
+        env:
+          NUITKA_DEPENDENCY_WALKER_ANSWER: yes
         run: |
           python -m nuitka `
             --standalone `

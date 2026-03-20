@@ -7,6 +7,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -63,6 +65,11 @@ jobs:
             --include-package-data=matplotlib \
             --output-filename=${{ matrix.output }} \
             app_tk.py
+
+      - name: Install Windows deps
+        if: runner.os == 'Windows'
+        run: |
+          pip install depends-exe
 
       - name: Build Windows
         if: runner.os == 'Windows'

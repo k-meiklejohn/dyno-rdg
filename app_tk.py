@@ -457,7 +457,7 @@ class App(tk.Tk):
         ).pack(side="left", padx=20)
 
         tk.Label(
-            header, text="v0.1",
+            header, text="v1.0.7",
             bg=SURFACE, fg=MUTED,
             font=STYLE['font_version'],
         ).pack(side="right", padx=20)

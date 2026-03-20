@@ -25,10 +25,23 @@ DANGER   = "#ff4455"
 TEXT     = "#e2e4ea"
 MUTED    = "#5a5f72"
 
+STYLE = {
+    "font_mono":        ("Courier", 11),
+    "font_mono_small":  ("Courier", 9),
+    "font_mono_tiny":   ("Courier", 8),
+    "font_header":      ("Courier", 12, "bold"),
+    "font_version":     ("Courier", 9),
+    "font_sans":        ("Hevetica", 11),
+    "sidebar_width":    260,
+    "rows_height":      200,
+    "window_width":     1280,
+    "window_height":    820,
+}
+
 # ── Font helpers ────────────────────────────────────────────────────────────
-MONO  = ("Courier", 11)
-MONO_S = ("Courier", 9)
-SANS  = ("Helvetica", 11)
+MONO    = STYLE['font_mono']
+MONO_S  = STYLE['font_mono_small']
+SANS    = STYLE['font_sans']
 
 
 def hex_to_rgb(h):
@@ -49,25 +62,44 @@ def blend(fg, bg, alpha):
         int(bb + (fb - bb) * alpha),
     )
 
+def get_label(section, key):
+    """Get display label for a key, falling back to the key itself."""
+    return SCHEMA.get("labels", {}).get(section, {}).get(key, key.replace("_", " ").title())
+
 
 # ── Schema ──────────────────────────────────────────────────────────────────
 # Mirrors what /schema returns from FastAPI. Edit to match your actual schema.
 SCHEMA = {
     "params": {
         "transcript_length": {"type": "int",   "default": 1000, "min": 1},
-        "loading":           {"type": "float", "default": 1, "min": 0, "max": 1, "step": 0.01},
-        "log_reduction":     {"type": "float", "default": 1.5, "min": 1, "max": 10, "step": 0.5},
+        "loading":           {"type": "float", "default": 1, "min": 0, "max": 10, "step": 0.01},
+        "log_reduction":     {"type": "float", "default": 1.5, "min": 1, "max": 10, "step": 0.1},
         "height_scale":      {"type": "float", "default": 2.0, "min": 0.5, "max": 10, "step": 0.1},
-        "bulk_length":       {"type": "float", "default": 0.5, "min": 0.1, "max": 5,  "step": 0.1},
+        "bulk_length":       {"type": "float", "default": 0.3, "min": 0, "max": 5,  "step": 0.1},
     },
     "row": {
-        "pos":       {"type": "int",    "default": 10,      "min": 1, "max_param": "transcript_length"},
+        "pos":       {"type": "int",    "default": 100,      "min": 1, "max_param": "transcript_length"},
         "type":      {"type": "select", "default": "init",  "options": ["stop", "init", "ires", "shift+1", "shift-1"]},
         "prob":      {"type": "float",  "default": 1,    "min": 0, "max": 1, "step": 0.01},
-        "drop_prob": {"type": "float",  "default": 0,    "min": 0, "max": 1, "step": 0.01},
+        "drop_prob": {"type": "float",  "default": 0.0,    "min": 0, "max": 1, "step": 0.01},
+    },
+    # ── Display labels — edit these freely without touching anything else ──
+    "labels": {
+        "params": {
+            "transcript_length": "Transcript Length",
+            "loading":           "Loading Rate",
+            "log_reduction":     "Log Reduction",
+            "height_scale":      "Height Scale",
+            "bulk_length":       "Bulk Length",
+        },
+        "row": {
+            "pos":       "Position",
+            "type":      "Event Type",
+            "prob":      "Probability",
+            "drop_prob": "Drop Probability",
+        }
     }
 }
-
 
 
 # ── Styled widgets ───────────────────────────────────────────────────────────
@@ -202,8 +234,8 @@ class SVGCanvas(tk.Canvas):
             max(self.winfo_width() // 2, 400),
             max(self.winfo_height() // 2, 200),
             text=message,
-            fill=MUTED,
-            font=MONO_S,
+            fill=DANGER,
+            font=MONO,
         )
 
 # ── Row table ────────────────────────────────────────────────────────────────
@@ -218,14 +250,14 @@ class RowTable(tk.Frame):
         self._build_header()
 
     def _build_header(self):
-        cols = list(self.schema.keys()) + [""]
+        cols = [get_label("row", k) for k in self.schema.keys()] + [""]
         for c, col in enumerate(cols):
             tk.Label(
                 self,
                 text=col.upper(),
                 bg=SURFACE,
-                fg=MUTED,
-                font=("Courier", 8),
+                fg=TEXT,
+                font=(STYLE['font_mono']),
                 anchor="w",
                 padx=8,
             ).grid(row=0, column=c, sticky="w", pady=(0, 6))
@@ -361,9 +393,11 @@ class ParamPanel(tk.Frame):
     def _build(self):
         for k, spec in self.schema.items():
             tk.Label(
-                self, text=k + ":", bg=SURFACE, fg=MUTED,
-                font=("Courier", 9), anchor="w"
+                self, text=get_label("params", k) + ":",
+                bg=SURFACE, fg=TEXT,
+                font=STYLE['font_mono'], anchor="w"
             ).pack(fill="x", padx=4, pady=(6, 0))
+            # ... rest of method unchanged
 
             t = spec["type"]
             if t in ("int", "float"):
@@ -419,13 +453,13 @@ class App(tk.Tk):
         tk.Label(
             header, text="DYNO  RDG",
             bg=SURFACE, fg=ACCENT,
-            font=("Courier", 12, "bold"),
+            font=STYLE['font_header'],
         ).pack(side="left", padx=20)
 
         tk.Label(
             header, text="v0.1",
             bg=SURFACE, fg=MUTED,
-            font=("Courier", 9),
+            font=STYLE['font_version'],
         ).pack(side="right", padx=20)
 
         sep = tk.Frame(self, bg=BORDER, height=1)
@@ -464,6 +498,56 @@ class App(tk.Tk):
         styled_button(btn_frame, "↓ SVG", self._download_svg, style="secondary").pack(side="left", padx=(0, 6))
         styled_button(btn_frame, "↓ PNG", self._download_png, style="secondary").pack(side="left")
 
+        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=16, pady=12)
+
+        label(sidebar, "INSTRUCTIONS - Scroll to see all", muted=False, bg=SURFACE).pack(
+            anchor="w", padx=16, pady=(0, 8)
+        )
+
+        instructions_text = """Add rows to define events along your transcript.
+
+Position: nucleotide position of the event.
+
+Event Type:
+stop  — termination codon
+init  — start codon
+ires  — internal ribosome entry
+shift — frameshift (+1, -1, etc.)
+
+Probability: chance the event occurs.
+
+Drop Probability: chance ribosome dissociates from transcript.
+
+For STOP events, Probality is the chance of scanning occuring i.e. leading to reinitiation, while \
+drop probability is the likelihood of the STOP acting as a normal stop codon
+
+Loading Rate controls how many ribosomes are loaded onto the transcript (set in Parameters).
+
+Adjust Log Reduction to compress the distance between events logarithmically, \
+i.e. longer distances get compressed by a greater factor than smaller distances.
+
+Bulk Length controls the relative length of the bulk (purple) edges compared to a ribosomal flux of 1
+
+Height Scale controls the vertical scaling of the graph, namely the distance between states, not height relative to length"""
+
+        instructions = tk.Text(
+            sidebar,
+            bg=SURFACE,
+            fg=TEXT,
+            font=("Courier", 10),
+            relief="flat",
+            wrap="word",
+            height=18,
+            padx=8,
+            pady=4,
+            highlightthickness=0,
+            state="normal",
+            cursor="arrow",
+        )
+        instructions.insert("1.0", instructions_text)
+        instructions.config(state="disabled")  # read only
+        instructions.pack(fill="x", padx=8, pady=(0, 16))
+
         # ── Main area ─────────────────────────────────────────────────────────
         main = tk.Frame(body, bg=BG)
         main.pack(side="left", fill="both", expand=True)
@@ -471,7 +555,7 @@ class App(tk.Tk):
         # Rows section
         rows_header = tk.Frame(main, bg=BG)
         rows_header.pack(fill="x", padx=20, pady=(16, 4))
-        label(rows_header, "ROWS", muted=True, bg=BG).pack(side="left")
+        label(rows_header, "EVENTS", muted=True, bg=BG).pack(side="left")
 
         
 
@@ -482,14 +566,11 @@ class App(tk.Tk):
         self._rows_canvas = tk.Canvas(
             rows_outer, bg=SURFACE, highlightthickness=0, height=200
         )
-        rows_scroll_x = ttk.Scrollbar(
-            rows_outer, orient="horizontal", command=self._rows_canvas.xview
-        )
+
         rows_scroll_y = ttk.Scrollbar(
             rows_outer, orient="vertical", command=self._rows_canvas.yview
         )
         self._rows_canvas.configure(
-            xscrollcommand=rows_scroll_x.set,
             yscrollcommand=rows_scroll_y.set
         )
 
@@ -500,7 +581,6 @@ class App(tk.Tk):
 
     
         rows_scroll_y.pack(side="right", fill="y")
-        rows_scroll_x.pack(side="bottom", fill="x")
         self._rows_canvas.pack(fill="both", expand=True)
 
         self._rows_inner = tk.Frame(self._rows_canvas, bg=SURFACE)

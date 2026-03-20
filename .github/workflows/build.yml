@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             output: dyno-rdg-linux
           - os: windows-latest
             output: dyno-rdg-windows.exe

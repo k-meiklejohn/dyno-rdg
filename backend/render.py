@@ -1601,7 +1601,7 @@ def render_svg(map_dict, param_dict):
         init_diff = len(transcript_map[transcript_map['type'] == 'init']) - transcript_map[transcript_map['type'] == 'init'].pos.nunique()
         
         if init_diff != 0 or ires_diff != 0:
-            return 'Two IRES or two INIT share a position, remove one of each pair'
+            return 'Two IRES or two INIT share a position, remove all but one of each pair'
 
         
         spec_diff_else = len(transcript_map[~(transcript_map['type'] == 'ires')]) - \

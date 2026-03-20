@@ -1,0 +1,63 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            output: dyno-rdg-linux
+          - os: windows-latest
+            output: dyno-rdg-windows.exe
+          - os: macos-latest
+            output: dyno-rdg-mac
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt nuitka ordered-set zstandard
+
+      - name: Install Linux system deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y gcc patchelf python3-tk
+
+      - name: Install Mac system deps
+        if: runner.os == 'macOS'
+        run: brew install python-tk
+
+      - name: Build
+        run: |
+          python -m nuitka \
+            --standalone \
+            --onefile \
+            --enable-plugin=tk-inter \
+            --enable-plugin=no-qt \
+            --nofollow-import-to=IPython \
+            --nofollow-import-to=pandas.tests \
+            --nofollow-import-to=numpy.tests \
+            --nofollow-import-to=matplotlib.tests \
+            --include-package=backend \
+            --include-package=pandas \
+            --include-package=networkx \
+            --include-package-data=numpy \
+            --include-package-data=pandas \
+            --include-package-data=matplotlib \
+            --output-filename=${{ matrix.output }} \
+            app_tk.py
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.output }}

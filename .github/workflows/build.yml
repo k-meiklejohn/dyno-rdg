@@ -16,13 +16,14 @@ jobs:
             output: dyno-rdg-windows.exe
           - os: macos-latest
             output: dyno-rdg-mac
+      fail-fast: false  # ← don't cancel other platforms if one fails
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5.4.0
         with:
           python-version: '3.12'
 
@@ -37,27 +38,59 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install python-tk
 
-      - name: Build
+      - name: Build Linux/Mac
+        if: runner.os != 'Windows'
         run: |
           python -m nuitka \
             --standalone \
             --onefile \
             --enable-plugin=tk-inter \
-            --enable-plugin=no-qt \
             --nofollow-import-to=IPython \
             --nofollow-import-to=pandas.tests \
             --nofollow-import-to=numpy.tests \
             --nofollow-import-to=matplotlib.tests \
+            --nofollow-import-to=PyQt6 \
+            --nofollow-import-to=PyQt5 \
+            --nofollow-import-to=PySide2 \
+            --nofollow-import-to=PySide6 \
             --include-package=backend \
+            --include-package=numpy \
             --include-package=pandas \
             --include-package=networkx \
+            --include-package=matplotlib.backends \
             --include-package-data=numpy \
             --include-package-data=pandas \
             --include-package-data=matplotlib \
             --output-filename=${{ matrix.output }} \
             app_tk.py
 
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        run: |
+          python -m nuitka `
+            --standalone `
+            --onefile `
+            --enable-plugin=tk-inter `
+            --nofollow-import-to=IPython `
+            --nofollow-import-to=pandas.tests `
+            --nofollow-import-to=numpy.tests `
+            --nofollow-import-to=matplotlib.tests `
+            --nofollow-import-to=PyQt6 `
+            --nofollow-import-to=PyQt5 `
+            --nofollow-import-to=PySide2 `
+            --nofollow-import-to=PySide6 `
+            --include-package=backend `
+            --include-package=numpy `
+            --include-package=pandas `
+            --include-package=networkx `
+            --include-package=matplotlib.backends `
+            --include-package-data=numpy `
+            --include-package-data=pandas `
+            --include-package-data=matplotlib `
+            --output-filename=${{ matrix.output }} `
+            app_tk.py
+
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.3.2
         with:
           files: ${{ matrix.output }}

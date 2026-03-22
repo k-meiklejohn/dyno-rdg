@@ -72,7 +72,7 @@ jobs:
         run: |
           python -m nuitka `
             --standalone `
-            --mingw64 `
+            --assume-yes-for-downloads `
             --onefile `
             --enable-plugin=tk-inter `
             --nofollow-import-to=IPython `

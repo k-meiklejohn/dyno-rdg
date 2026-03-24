@@ -414,6 +414,20 @@ class ParamPanel(tk.Frame):
                 self._vars[k] = var
 
     def _on_param(self, key, var):
+        spec = self.schema[key]
+        try:
+            val = var.get()
+            mn = spec.get("min")
+            mx = spec.get("max")
+            if mn is not None:
+                val = max(mn, val)
+            if mx is not None:
+                val = min(mx, val)
+            # Only set back if clamping changed the value, to avoid trace loop
+            if val != var.get():
+                var.set(val)
+        except tk.TclError:
+            pass
         self.on_change()
 
     def get_values(self):
@@ -421,7 +435,12 @@ class ParamPanel(tk.Frame):
         for k, spec in self.schema.items():
             try:
                 v = self._vars[k].get()
-                out[k] = int(v) if spec["type"] == "int" else float(v) if spec["type"] == "float" else v
+                val = int(v) if spec["type"] == "int" else float(v) if spec["type"] == "float" else v
+                mn = spec.get("min")
+                mx = spec.get("max")
+                if mn is not None: val = max(mn, val)
+                if mx is not None: val = min(mx, val)
+                out[k] = val
             except tk.TclError:
                 out[k] = spec["default"]
         return out
@@ -439,6 +458,7 @@ class App(tk.Tk):
 
         self._render_timer = None
         self._last_svg     = None
+        self._render_gen   = 0
 
         self._build_ui()
     def _on_rows_mousewheel(self, event):
@@ -457,7 +477,7 @@ class App(tk.Tk):
         ).pack(side="left", padx=20)
 
         tk.Label(
-            header, text="v1.0.7",
+            header, text="v1.0.9",
             bg=SURFACE, fg=MUTED,
             font=STYLE['font_version'],
         ).pack(side="right", padx=20)
@@ -481,8 +501,9 @@ class App(tk.Tk):
         )
 
         self.param_panel = ParamPanel(
-            sidebar, SCHEMA, on_change=self._schedule_render
+            sidebar, SCHEMA, on_change=self._render
         )
+        
         self.param_panel.pack(fill="x", padx=8)
 
         tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=16, pady=12)
@@ -623,19 +644,25 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
     def _render(self):
         rows   = self.row_table.rows
         params = self.param_panel.get_values()
-        
+
+        self._render_gen += 1
+        my_gen = self._render_gen  # capture at dispatch time
+
         def do_render():
             try:
                 from backend.render import render_svg
                 import copy
 
-                # Always render — even with no rows, loading alone may produce output
                 result = render_svg(copy.deepcopy(rows), params)
 
                 if isinstance(result, tuple):
                     svg_text, png_bytes = result
                 else:
                     svg_text, png_bytes = result, None
+
+                # Discard if a newer render has already been dispatched
+                if my_gen != self._render_gen:
+                    return
 
                 if isinstance(svg_text, str) and ('<?xml' in svg_text or '<svg' in svg_text):
                     self.after(0, lambda s=svg_text, p=png_bytes: self.svg_canvas.load_svg(s, p))
@@ -645,9 +672,9 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.after(0, lambda m=str(e): self.svg_canvas.clear(f"Error: {m}"))
+                if my_gen == self._render_gen:
+                    self.after(0, lambda m=str(e): self.svg_canvas.clear(f"Error: {m}"))
 
-        
         threading.Thread(target=do_render, daemon=True).start()
 
     def _download_svg(self):

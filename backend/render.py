@@ -780,7 +780,7 @@ def render_svg(map_dict, param_dict):
         mask_neg = out['target_x'] < 0
         out.loc[mask_neg, 'target_x'] = out.loc[mask_neg, 'source_x']
 
-        if log_reduction != 1: #SCALE GRAPH BASED ON LOG VALUES OF DISTANCES
+        if log_reduction > 1: #SCALE GRAPH BASED ON LOG VALUES OF DISTANCES
             # --- Compute unique sorted x positions ---
             x_pos = sorted(set(list(out['source_x']) + [out['target_x'].iloc[-1]]))
 

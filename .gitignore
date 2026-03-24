@@ -2,3 +2,6 @@ app*/
 dyno-rdg*
 *svg
 *png
+__pycache__
+app_tk.*/
+

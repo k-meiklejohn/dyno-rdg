@@ -191,4 +191,4 @@ transition_list = [
 x = TransitionMap()
 x.add_weighted_edges_from(transition_list)
 y = x.to_fluxgraph()
-nx.display(y)
+nx.draw(y)

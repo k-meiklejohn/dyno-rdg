@@ -1,3 +1,5 @@
+#!/bin/env python
+
 import networkx as nx
 import warnings
 import matplotlib
@@ -129,13 +131,13 @@ class TransitionMap(RiboGraph):
         self._is_valid_weight()
 
     def to_fluxgraph(self):
-        return RiboGraphFlux(self)
+        return RiboGraphFlux(transition_map=self)
 
 
 class RiboGraphFlux(RiboGraph):
-    def __init__(self, incoming_graph_data=None, map=None, **attr):
+    def __init__(self, transition_map, incoming_graph_data=None, **attr):
         super().__init__(incoming_graph_data, **attr)
-        self.tranitions = map
+        self.tranitions = transition_map
         self.begun = False
         if map:
             self._construct()   
@@ -162,7 +164,6 @@ class RiboGraphFlux(RiboGraph):
             self.begun = True
 
         next_node = self._downstream_node(node)
-
         self.add_edge(node, next_node, flux=flux)
 
         total_weight = 1
@@ -183,7 +184,6 @@ class RiboGraphFlux(RiboGraph):
 transition_list = [ 
     ((1,-1), (1,0),   1),
     ((10,0), (10,1),  0.4),
-    ((10,0), (-1,-1), 0.4),
     ((20,0), (-1,-1), 1),
     ((20,1), (-1,-1), 1)
     ]
@@ -191,4 +191,6 @@ transition_list = [
 x = TransitionMap()
 x.add_weighted_edges_from(transition_list)
 y = x.to_fluxgraph()
-nx.draw(y)
+nx.draw(y, with_labels=True)
+
+matplotlib.pyplot.show()

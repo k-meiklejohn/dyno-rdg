@@ -1,18 +1,9 @@
 #!/bin/env python
 
 import networkx as nx
-import warnings
 import matplotlib.pyplot as plt
 
-
-    
-
-
-
-
-
-
-
+from .ribograph import TransitionMap
 
 
             

@@ -4,4 +4,9 @@ dyno-rdg*
 *png
 __pycache__
 app_tk.*/
+.venv/
+.gitignore
+.~*
+*csv
+*json
 

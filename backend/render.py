@@ -1,18 +1,43 @@
-def render_svg(map_dict, param_dict):
+import math
+import io
+from typing import List, Tuple
 
-    import pandas as pd
-    import numpy as np
-    import networkx as nx
-    import math
-    from typing import List, Tuple
-    import io
-    import matplotlib
-    matplotlib.use('Agg')  # Non-interactive backend, required for server use
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    from matplotlib.patches import Arc, Wedge
-    from matplotlib.path import Path
-    import matplotlib.patches as patches
+import pandas as pd
+import numpy as np
+import networkx as nx
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend, required for server use
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.patches as patches
+from matplotlib.patches import Arc, Wedge
+from matplotlib.path import Path
+
+color_map = {
+    "scan": "grey",
+    "tran1" : 'lightblue',
+    "tran2" : "blue",
+    "tran3" : 'darkblue',
+    "init" : "green",
+    "drop" : "purple",
+    'rein': 'orange',
+    'shift': 'red',
+    'load': 'purple'
+}
+
+COLOURS = {
+    "grey":   (0.6, 0.6, 0.6),
+    "green":  (0.2, 0.7, 0.3),
+    "blue":   (0.1, 0.1, 0.9),
+    "purple": (0.6, 0.3, 0.7),
+    'orange': (1, 0.6, 0 ),
+    'darkblue': (0,0,0.4),
+    'lightblue': (0.6,0.6,0.9),
+    'red': (0.9,0.1,0.1)
+}
+
+
+def render_svg(map_dict, param_dict):
 
 
     def map2nodes(transcript_map):
@@ -716,29 +741,6 @@ def render_svg(map_dict, param_dict):
 
 
 
-    color_map = {
-        "scan": "grey",
-        "tran1" : 'lightblue',
-        "tran2" : "blue",
-        "tran3" : 'darkblue',
-        "init" : "green",
-        "drop" : "purple",
-        'rein': 'orange',
-        'shift': 'red',
-        'load': 'purple'
-    }
-
-    COLOURS = {
-        "grey":   (0.6, 0.6, 0.6),
-        "green":  (0.2, 0.7, 0.3),
-        "blue":   (0.1, 0.1, 0.9),
-        "purple": (0.6, 0.3, 0.7),
-        'orange': (1, 0.6, 0 ),
-        'darkblue': (0,0,0.4),
-        'lightblue': (0.6,0.6,0.9),
-        'red': (0.9,0.1,0.1)
-    }
-
 
 
     def add_vert_category(edgelist: pd.DataFrame, log_reduction: float = 1.5, height_scale: float = 2) -> pd.DataFrame:
@@ -793,10 +795,8 @@ def render_svg(map_dict, param_dict):
             for gap in log_gaps:
                 log_x_pos.append(log_x_pos[-1] + gap)
 
-
             log_map = dict(zip(x_pos, log_x_pos))
 
-            
             out['source_x'] = out['source_x'].map(log_map)
             out['target_x'] = out['target_x'].map(log_map)
 
@@ -1510,12 +1510,6 @@ def render_svg(map_dict, param_dict):
 
 
 
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Wedge
-    import io
-    import math
 
     def draw_rect(ax, rects, scale_dict):
         for _, r in rects.iterrows():
@@ -1549,7 +1543,7 @@ def render_svg(map_dict, param_dict):
     def draw_arcs(ax, circles, scale_dict):
         QUARTER_ANGLES = {
             1: (270, 360),  # was bottom-right, now top-right
-            2: (180, 270),  # was bottom-left, now top-left  
+            2: (180, 270),  # was bottom-left, now top-left
             3: (90,  180),  # was top-left, now bottom-left
             4: (0,   90),   # was top-right, now bottom-right
         }
@@ -1661,8 +1655,6 @@ def render_svg(map_dict, param_dict):
     circles = rectangles_to_circles(rectangles=rects)
 
     triangles = rectangles_to_triangles(rects=rects)
-
-    scale_dict = calc_bounds(rects=rects, triangles=triangles, circles=circles)
 
     scale_dict = calc_bounds(rects=rects, triangles=triangles, circles=circles)
 

@@ -204,15 +204,47 @@ def label(parent, text, muted=False, **kw):
 # ── SVG Canvas ───────────────────────────────────────────────────────────────
 
 class SVGCanvas(tk.Canvas):
+    _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
     def __init__(self, parent, on_svg_ready=None, **kw):
         super().__init__(parent, bg=SURFACE, highlightthickness=0, **kw)
-        self._png_bytes   = None
-        self._photo       = None
-        self._svg_text    = None
+        self._png_bytes    = None
+        self._photo        = None
+        self._svg_text     = None
         self._on_svg_ready = on_svg_ready
+        self._loading_job  = None
         self.bind("<Configure>", self._on_resize)
 
+    def show_loading(self):
+        self._stop_spinner()
+        self._png_bytes = None
+        self._photo     = None
+        self.delete("all")
+        self._spinner_idx = 0
+        self._spinner_id  = self.create_text(
+            max(self.winfo_width() // 2, 400),
+            max(self.winfo_height() // 2, 200),
+            text=f"{self._SPINNER[0]}  Rendering…",
+            fill=MUTED,
+            font=MONO,
+        )
+        self._tick_spinner()
+
+    def _tick_spinner(self):
+        self._spinner_idx = (self._spinner_idx + 1) % len(self._SPINNER)
+        self.itemconfigure(
+            self._spinner_id,
+            text=f"{self._SPINNER[self._spinner_idx]}  Rendering…"
+        )
+        self._loading_job = self.after(80, self._tick_spinner)
+
+    def _stop_spinner(self):
+        if self._loading_job:
+            self.after_cancel(self._loading_job)
+            self._loading_job = None
+
     def load_svg(self, svg_text, png_bytes=None):
+        self._stop_spinner()
         self._svg_text  = svg_text
         self._png_bytes = png_bytes
         if self._on_svg_ready:
@@ -252,6 +284,7 @@ class SVGCanvas(tk.Canvas):
             )
 
     def clear(self, message="No events yet — add events to render"):
+        self._stop_spinner()
         self._png_bytes = None
         self._photo = None
         self.delete("all")
@@ -333,6 +366,16 @@ class RowTable(tk.Frame):
         for i, row_data in enumerate(self.rows):
             self._append_row_widgets(i, row_data)
 
+    def _bind_dirty(self, entry):
+        """Mark dirty only when a keypress actually changes the entry text."""
+        entry.bind("<KeyPress>",   lambda e, en=entry: setattr(en, '_pre_key', en.get()))
+        entry.bind("<KeyRelease>", lambda e, en=entry: (
+            self.on_dirty()
+            if e.keysym not in ("Return", "Tab")
+            and en.get() != getattr(en, '_pre_key', None)
+            else None
+        ))
+
     def _make_cell(self, row_data, key, spec, value):
         t = spec["type"]
 
@@ -387,7 +430,6 @@ class RowTable(tk.Frame):
                         val = round(1 - d.get(other, 0), 10)
                         v.set(val)
                 d[k] = val
-                self.on_dirty()
 
             def commit_float(e, d=row_data, k=key, v=var, s=spec, en=entry):
                 raw = en.get()
@@ -402,8 +444,10 @@ class RowTable(tk.Frame):
                 self.on_change()
 
             var.trace_add("write", update_float)
+            self._bind_dirty(entry)
             entry.bind("<Return>",   commit_float)
             entry.bind("<FocusOut>", commit_float)
+            slider.bind("<B1-Motion>",     lambda e: self.on_dirty())
             slider.bind("<ButtonRelease-1>", lambda e: self.on_change())
             return frame
 
@@ -416,9 +460,7 @@ class RowTable(tk.Frame):
 
             def update_int(*_, d=row_data, k=key, v=var, s=spec):
                 try:
-                    val = v.get()
-                    d[k] = max(s.get("min", 0), min(s.get("max", 9999), val))
-                    self.on_dirty()
+                    d[k] = max(s.get("min", 0), min(s.get("max", 9999), v.get()))
                 except tk.TclError:
                     pass
 
@@ -432,6 +474,7 @@ class RowTable(tk.Frame):
                 self.on_change()
 
             var.trace_add("write", update_int)
+            self._bind_dirty(entry)
             entry.bind("<Return>",   commit_int)
             entry.bind("<FocusOut>", commit_int)
             return entry
@@ -439,7 +482,8 @@ class RowTable(tk.Frame):
         # fallback text
         var = tk.StringVar(value=str(value))
         entry = styled_entry(self, textvariable=var)
-        var.trace_add("write", lambda *_, d=row_data, k=key, v=var: (d.update({k: v.get()}), self.on_dirty()))
+        var.trace_add("write", lambda *_, d=row_data, k=key, v=var: d.update({k: v.get()}))
+        entry.bind("<Key>",      lambda e: self.on_dirty())
         entry.bind("<Return>",   lambda e: self.on_change())
         entry.bind("<FocusOut>", lambda e: self.on_change())
         return entry
@@ -455,6 +499,15 @@ class ParamPanel(tk.Frame):
         self.on_dirty  = on_dirty or (lambda: None)
         self._vars     = {}
         self._build()
+
+    def _bind_dirty(self, entry):
+        entry.bind("<KeyPress>",   lambda e, en=entry: setattr(en, '_pre_key', en.get()))
+        entry.bind("<KeyRelease>", lambda e, en=entry: (
+            self.on_dirty()
+            if e.keysym not in ("Return", "Tab")
+            and en.get() != getattr(en, '_pre_key', None)
+            else None
+        ))
 
     def _build(self):
         for k, spec in self.schema.items():
@@ -478,7 +531,7 @@ class ParamPanel(tk.Frame):
                 entry.config(validate="key", validatecommand=_int_validator(entry, allow_neg))
             elif t == "float":
                 entry.config(validate="key", validatecommand=_float_validator(entry, allow_neg))
-            var.trace_add("write", lambda *_: self.on_dirty())
+            self._bind_dirty(entry)
             entry.bind("<Return>",   lambda e, k=k, v=var, s=spec, en=entry: self._commit_param(k, v, s, en))
             entry.bind("<FocusOut>", lambda e, k=k, v=var, s=spec, en=entry: self._commit_param(k, v, s, en))
             self._vars[k] = var
@@ -739,6 +792,7 @@ class App(tk.Tk):
         rows   = self.row_table.rows
         params = self.param_panel.get_values()
 
+        self.svg_canvas.show_loading()
         self._render_gen += 1
         my_gen = self._render_gen  # capture at dispatch time
 

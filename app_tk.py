@@ -3,17 +3,22 @@ Dyno RDG — Tkinter desktop UI
 Replaces the web frontend entirely. No ports, no browser needed.
 """
 
+import csv
+import io
+import json
+import math
+import threading
+import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import threading
-import io
-import math
 
 # Pre-import heavy packages in main thread to avoid numpy threading issues
+import matplotlib
+import networkx
 import numpy
 import pandas
-import networkx
-import matplotlib
+from PIL import Image, ImageTk
+from backend.render import render_svg
 
 # ── Colours (matching the web UI palette) ──────────────────────────────────
 BG       = "#0e0f11"
@@ -31,7 +36,7 @@ STYLE = {
     "font_mono_tiny":   ("Courier", 8),
     "font_header":      ("Courier", 12, "bold"),
     "font_version":     ("Courier", 9),
-    "font_sans":        ("Hevetica", 11),
+    "font_sans":        ("Helvetica", 11),
     "sidebar_width":    260,
     "rows_height":      200,
     "window_width":     1280,
@@ -41,7 +46,6 @@ STYLE = {
 # ── Font helpers ────────────────────────────────────────────────────────────
 MONO    = STYLE['font_mono']
 MONO_S  = STYLE['font_mono_small']
-SANS    = STYLE['font_sans']
 
 
 def hex_to_rgb(h):
@@ -62,10 +66,45 @@ def blend(fg, bg, alpha):
         int(bb + (fb - bb) * alpha),
     )
 
+
+# ── Input validators ─────────────────────────────────────────────────────────
+
+def _int_validator(widget, allow_negative=False):
+    """Return a (vcmd, '%P') tuple that only permits valid integer characters."""
+    def ok(P):
+        if P == "":
+            return True
+        if allow_negative and P == "-":
+            return True
+        try:
+            int(P)
+            return True
+        except ValueError:
+            return False
+    return (widget.register(ok), "%P")
+
+
+def _float_validator(widget, allow_negative=False):
+    """Return a (vcmd, '%P') tuple that only permits valid float characters."""
+    def ok(P):
+        if P in ("", "."):
+            return True
+        if allow_negative and P in ("-", "-."):
+            return True
+        try:
+            float(P)
+            return True
+        except ValueError:
+            return False
+    return (widget.register(ok), "%P")
+
+
 def get_label(section, key):
     """Get display label for a key, falling back to the key itself."""
     return SCHEMA.get("labels", {}).get(section, {}).get(key, key.replace("_", " ").title())
 
+
+MAX_EVENTS = 50  # Maximum number of event rows allowed
 
 # ── Schema ──────────────────────────────────────────────────────────────────
 # Mirrors what /schema returns from FastAPI. Edit to match your actual schema.
@@ -165,20 +204,51 @@ def label(parent, text, muted=False, **kw):
 # ── SVG Canvas ───────────────────────────────────────────────────────────────
 
 class SVGCanvas(tk.Canvas):
-    def __init__(self, parent, **kw):
+    _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self, parent, on_svg_ready=None, **kw):
         super().__init__(parent, bg=SURFACE, highlightthickness=0, **kw)
-        self._png_bytes = None
-        self._photo = None
-        self._svg_text = None  # keep for download
+        self._png_bytes    = None
+        self._photo        = None
+        self._svg_text     = None
+        self._on_svg_ready = on_svg_ready
+        self._loading_job  = None
         self.bind("<Configure>", self._on_resize)
 
+    def show_loading(self):
+        self._stop_spinner()
+        self._png_bytes = None
+        self._photo     = None
+        self.delete("all")
+        self._spinner_idx = 0
+        self._spinner_id  = self.create_text(
+            max(self.winfo_width() // 2, 400),
+            max(self.winfo_height() // 2, 200),
+            text=f"{self._SPINNER[0]}  Rendering…",
+            fill=MUTED,
+            font=MONO,
+        )
+        self._tick_spinner()
+
+    def _tick_spinner(self):
+        self._spinner_idx = (self._spinner_idx + 1) % len(self._SPINNER)
+        self.itemconfigure(
+            self._spinner_id,
+            text=f"{self._SPINNER[self._spinner_idx]}  Rendering…"
+        )
+        self._loading_job = self.after(80, self._tick_spinner)
+
+    def _stop_spinner(self):
+        if self._loading_job:
+            self.after_cancel(self._loading_job)
+            self._loading_job = None
+
     def load_svg(self, svg_text, png_bytes=None):
-        self._svg_text = svg_text
+        self._stop_spinner()
+        self._svg_text  = svg_text
         self._png_bytes = png_bytes
-        # Store on parent app for download
-        app = self.winfo_toplevel()
-        if hasattr(app, '_last_svg'):
-            app._last_svg = svg_text
+        if self._on_svg_ready:
+            self._on_svg_ready(svg_text)
         self._draw()
 
     def _on_resize(self, event):
@@ -187,35 +257,22 @@ class SVGCanvas(tk.Canvas):
 
     def _draw(self):
         if not self._png_bytes:
-            print("DEBUG: _png_bytes is None or empty")
             return
         try:
-            import io
-            from PIL import Image, ImageTk
-
-            print(f"DEBUG: png_bytes length = {len(self._png_bytes)}")
-
             cw = max(self.winfo_width(), 100)
             ch = max(self.winfo_height(), 100)
-            print(f"DEBUG: canvas size = {cw}x{ch}")
 
             img = Image.open(io.BytesIO(self._png_bytes))
-            print(f"DEBUG: image size = {img.size}")
-
             img.thumbnail((cw, ch), Image.LANCZOS)
-            print(f"DEBUG: thumbnail size = {img.size}")
 
             self.delete("all")
             photo = ImageTk.PhotoImage(img)
             self._photo = photo
             x = (cw - img.width) // 2
             y = (ch - img.height) // 2
-            print(f"DEBUG: placing image at {x},{y}")
             self.create_image(x, y, anchor="nw", image=photo)
-            print("DEBUG: image created successfully")
 
         except Exception as e:
-            import traceback
             traceback.print_exc()
             self.delete("all")
             self.create_text(
@@ -226,7 +283,8 @@ class SVGCanvas(tk.Canvas):
                 font=MONO_S,
             )
 
-    def clear(self, message="No events yet — add  events to render"):
+    def clear(self, message="No events yet — add events to render"):
+        self._stop_spinner()
         self._png_bytes = None
         self._photo = None
         self.delete("all")
@@ -241,12 +299,13 @@ class SVGCanvas(tk.Canvas):
 # ── Row table ────────────────────────────────────────────────────────────────
 
 class RowTable(tk.Frame):
-    def __init__(self, parent, schema, on_change, **kw):
+    def __init__(self, parent, schema, on_change, on_dirty=None, **kw):
         super().__init__(parent, bg=SURFACE, **kw)
-        self.schema    = schema["row"]
-        self.on_change = on_change
-        self.rows      = []
-        self._widgets  = []
+        self.schema      = schema["row"]
+        self.on_change   = on_change
+        self.on_dirty    = on_dirty or (lambda: None)
+        self.rows        = []
+        self._row_widgets = []  # list of widget-lists, one per row
         self._build_header()
 
     def _build_header(self):
@@ -266,42 +325,64 @@ class RowTable(tk.Frame):
         sep.grid(row=1, column=0, columnspan=len(cols), sticky="ew", pady=(0, 4))
 
     def add_row(self):
+        if len(self.rows) >= MAX_EVENTS:
+            messagebox.showinfo("Limit reached", f"Maximum {MAX_EVENTS} events allowed.")
+            return
         row = {k: v["default"] for k, v in self.schema.items()}
         self.rows.append(row)
-        self._redraw()
+        self._append_row_widgets(len(self.rows) - 1, row)
         self.on_change()
 
-    def delete_row(self, i):
-        self.rows.pop(i)
-        self._redraw()
+    def _delete_row_by_data(self, row_data):
+        idx = self.rows.index(row_data)
+        self.rows.pop(idx)
+        for w in self._row_widgets[idx]:
+            w.destroy()
+        self._row_widgets.pop(idx)
+        # Re-grid all rows that shifted up
+        for i in range(idx, len(self._row_widgets)):
+            for w in self._row_widgets[i]:
+                w.grid(row=i + 2)
         self.on_change()
+
+    def _append_row_widgets(self, i, row_data):
+        widgets = []
+        col = 0
+        for key, spec in self.schema.items():
+            w = self._make_cell(row_data, key, spec, row_data[key])
+            w.grid(row=i + 2, column=col, padx=4, pady=3, sticky="w")
+            widgets.append(w)
+            col += 1
+        btn = styled_button(self, "✕", lambda d=row_data: self._delete_row_by_data(d), style="danger")
+        btn.grid(row=i + 2, column=col, padx=4)
+        widgets.append(btn)
+        self._row_widgets.append(widgets)
 
     def _redraw(self):
-        # Clear old widgets
-        for w in self._widgets:
-            w.destroy()
-        self._widgets = []
+        for row_widgets in self._row_widgets:
+            for w in row_widgets:
+                w.destroy()
+        self._row_widgets = []
+        for i, row_data in enumerate(self.rows):
+            self._append_row_widgets(i, row_data)
 
-        for i, row in enumerate(self.rows):
-            col = 0
-            for key, spec in self.schema.items():
-                w = self._make_cell(i, key, spec, row[key])
-                w.grid(row=i + 2, column=col, padx=4, pady=3, sticky="w")
-                self._widgets.append(w)
-                col += 1
+    def _bind_dirty(self, entry):
+        """Mark dirty only when a keypress actually changes the entry text."""
+        entry.bind("<KeyPress>",   lambda e, en=entry: setattr(en, '_pre_key', en.get()))
+        entry.bind("<KeyRelease>", lambda e, en=entry: (
+            self.on_dirty()
+            if e.keysym not in ("Return", "Tab")
+            and en.get() != getattr(en, '_pre_key', None)
+            else None
+        ))
 
-            # Delete button
-            btn = styled_button(self, "✕", lambda i=i: self.delete_row(i), style="danger")
-            btn.grid(row=i + 2, column=col, padx=4)
-            self._widgets.append(btn)
-
-    def _make_cell(self, row_i, key, spec, value):
+    def _make_cell(self, row_data, key, spec, value):
         t = spec["type"]
 
         if t == "select":
             var = tk.StringVar(value=value)
-            def on_select(v, ri=row_i, k=key, sv=var):
-                self.rows[ri][k] = sv.get()
+            def on_select(v, d=row_data, k=key, sv=var):
+                d[k] = sv.get()
                 self.on_change()
             om = tk.OptionMenu(self, var, *spec["options"], command=on_select)
             om.config(
@@ -338,57 +419,95 @@ class RowTable(tk.Frame):
             )
             slider.pack(side="left")
 
-            def on_float_change(*_, ri=row_i, k=key, v=var):
+            allow_neg = spec.get("min", 0) < 0
+            entry.config(validate="key", validatecommand=_float_validator(entry, allow_neg))
+
+            def update_float(*_, d=row_data, k=key, v=var):
                 val = v.get()
-                # Clamp prob + drop_prob <= 1
                 if k in ("prob", "drop_prob"):
                     other = "drop_prob" if k == "prob" else "prob"
-                    other_val = self.rows[ri].get(other, 0)
-                    if val + other_val > 1:
-                        val = round(1 - other_val, 10)
+                    if val + d.get(other, 0) > 1:
+                        val = round(1 - d.get(other, 0), 10)
                         v.set(val)
-                self.rows[ri][k] = val
+                d[k] = val
+
+            def commit_float(e, d=row_data, k=key, v=var, s=spec, en=entry):
+                raw = en.get()
+                try:
+                    val = float(raw)
+                    mn, mx = s.get("min"), s.get("max")
+                    if mn is not None: val = max(mn, val)
+                    if mx is not None: val = min(mx, val)
+                    v.set(round(val, 10))
+                except (ValueError, tk.TclError):
+                    v.set(s["default"])
                 self.on_change()
 
-            var.trace_add("write", on_float_change)
+            var.trace_add("write", update_float)
+            self._bind_dirty(entry)
+            entry.bind("<Return>",   commit_float)
+            entry.bind("<FocusOut>", commit_float)
+            slider.bind("<B1-Motion>",     lambda e: self.on_dirty())
+            slider.bind("<ButtonRelease-1>", lambda e: self.on_change())
             return frame
 
         if t == "int":
             var = tk.IntVar(value=value)
             entry = styled_entry(self, width=6, textvariable=var)
 
-            def on_int_change(*_, ri=row_i, k=key, v=var, s=spec):
+            allow_neg = spec.get("min", 0) < 0
+            entry.config(validate="key", validatecommand=_int_validator(entry, allow_neg))
+
+            def update_int(*_, d=row_data, k=key, v=var, s=spec):
                 try:
-                    val = v.get()
-                    mn = s.get("min", 0)
-                    mx = s.get("max", 9999)
-                    val = max(mn, min(mx, val))
-                    self.rows[ri][k] = val
-                    self.on_change()
+                    d[k] = max(s.get("min", 0), min(s.get("max", 9999), v.get()))
                 except tk.TclError:
                     pass
 
-            var.trace_add("write", on_int_change)
+            def commit_int(e, d=row_data, k=key, v=var, s=spec, en=entry):
+                raw = en.get()
+                try:
+                    val = int(raw)
+                    v.set(max(s.get("min", 0), min(s.get("max", 9999), val)))
+                except (ValueError, tk.TclError):
+                    v.set(s["default"])
+                self.on_change()
+
+            var.trace_add("write", update_int)
+            self._bind_dirty(entry)
+            entry.bind("<Return>",   commit_int)
+            entry.bind("<FocusOut>", commit_int)
             return entry
 
         # fallback text
         var = tk.StringVar(value=str(value))
         entry = styled_entry(self, textvariable=var)
-        var.trace_add("write", lambda *_, ri=row_i, k=key, v=var: (
-            self.rows[ri].update({k: v.get()}), self.on_change()
-        ))
+        var.trace_add("write", lambda *_, d=row_data, k=key, v=var: d.update({k: v.get()}))
+        entry.bind("<Key>",      lambda e: self.on_dirty())
+        entry.bind("<Return>",   lambda e: self.on_change())
+        entry.bind("<FocusOut>", lambda e: self.on_change())
         return entry
 
 
 # ── Param panel ──────────────────────────────────────────────────────────────
 
 class ParamPanel(tk.Frame):
-    def __init__(self, parent, schema, on_change, **kw):
+    def __init__(self, parent, schema, on_change, on_dirty=None, **kw):
         super().__init__(parent, bg=SURFACE, **kw)
         self.schema    = schema["params"]
         self.on_change = on_change
+        self.on_dirty  = on_dirty or (lambda: None)
         self._vars     = {}
         self._build()
+
+    def _bind_dirty(self, entry):
+        entry.bind("<KeyPress>",   lambda e, en=entry: setattr(en, '_pre_key', en.get()))
+        entry.bind("<KeyRelease>", lambda e, en=entry: (
+            self.on_dirty()
+            if e.keysym not in ("Return", "Tab")
+            and en.get() != getattr(en, '_pre_key', None)
+            else None
+        ))
 
     def _build(self):
         for k, spec in self.schema.items():
@@ -397,53 +516,56 @@ class ParamPanel(tk.Frame):
                 bg=SURFACE, fg=TEXT,
                 font=STYLE['font_mono'], anchor="w"
             ).pack(fill="x", padx=4, pady=(6, 0))
-            # ... rest of method unchanged
 
             t = spec["type"]
-            if t in ("int", "float"):
+            allow_neg = spec.get("min", 0) < 0
+            if t == "int":
+                var = tk.IntVar(value=spec["default"])
+            elif t == "float":
                 var = tk.DoubleVar(value=spec["default"])
-                entry = styled_entry(self, textvariable=var)
-                entry.pack(fill="x", padx=4, pady=(2, 0))
-                var.trace_add("write", lambda *_, v=var, k=k: self._on_param(k, v))
-                self._vars[k] = var
             else:
                 var = tk.StringVar(value=spec["default"])
-                entry = styled_entry(self, textvariable=var)
-                entry.pack(fill="x", padx=4, pady=(2, 0))
-                var.trace_add("write", lambda *_, v=var, k=k: self._on_param(k, v))
-                self._vars[k] = var
+            entry = styled_entry(self, textvariable=var)
+            entry.pack(fill="x", padx=4, pady=(2, 0))
+            if t == "int":
+                entry.config(validate="key", validatecommand=_int_validator(entry, allow_neg))
+            elif t == "float":
+                entry.config(validate="key", validatecommand=_float_validator(entry, allow_neg))
+            self._bind_dirty(entry)
+            entry.bind("<Return>",   lambda e, k=k, v=var, s=spec, en=entry: self._commit_param(k, v, s, en))
+            entry.bind("<FocusOut>", lambda e, k=k, v=var, s=spec, en=entry: self._commit_param(k, v, s, en))
+            self._vars[k] = var
 
-    def _on_param(self, key, var):
-        spec = self.schema[key]
+    def _commit_param(self, key, var, spec, entry):
+        raw = entry.get()
+        t   = spec["type"]
         try:
-            val = var.get()
-            mn = spec.get("min")
-            mx = spec.get("max")
-            if mn is not None:
-                val = max(mn, val)
-            if mx is not None:
-                val = min(mx, val)
-            # Only set back if clamping changed the value, to avoid trace loop
-            if val != var.get():
-                var.set(val)
-        except tk.TclError:
-            pass
+            val = int(raw) if t == "int" else float(raw) if t == "float" else raw
+            mn, mx = spec.get("min"), spec.get("max")
+            if mn is not None: val = max(mn, val)
+            if mx is not None: val = min(mx, val)
+            var.set(val)
+        except (ValueError, tk.TclError):
+            var.set(spec["default"])
         self.on_change()
 
     def get_values(self):
         out = {}
         for k, spec in self.schema.items():
             try:
-                v = self._vars[k].get()
-                val = int(v) if spec["type"] == "int" else float(v) if spec["type"] == "float" else v
-                mn = spec.get("min")
-                mx = spec.get("max")
+                val = self._vars[k].get()
+                mn, mx = spec.get("min"), spec.get("max")
                 if mn is not None: val = max(mn, val)
                 if mx is not None: val = min(mx, val)
                 out[k] = val
             except tk.TclError:
                 out[k] = spec["default"]
         return out
+
+    def set_values(self, values: dict):
+        for k, var in self._vars.items():
+            if k in values:
+                var.set(values[k])
 
 
 # ── Main application ─────────────────────────────────────────────────────────
@@ -461,8 +583,6 @@ class App(tk.Tk):
         self._render_gen   = 0
 
         self._build_ui()
-    def _on_rows_mousewheel(self, event):
-        self._rows_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _build_ui(self):
         # ── Header ──────────────────────────────────────────────────────────
@@ -501,9 +621,8 @@ class App(tk.Tk):
         )
 
         self.param_panel = ParamPanel(
-            sidebar, SCHEMA, on_change=self._render
+            sidebar, SCHEMA, on_change=self._render, on_dirty=self._on_dirty
         )
-        
         self.param_panel.pack(fill="x", padx=8)
 
         tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=16, pady=12)
@@ -515,44 +634,52 @@ class App(tk.Tk):
         btn_frame = tk.Frame(sidebar, bg=SURFACE)
         btn_frame.pack(fill="x", padx=12)
 
-        styled_button(btn_frame, "+ Add Event", self._add_row).pack(side="left", padx=(0, 6))
-        styled_button(btn_frame, "↓ SVG", self._download_svg, style="secondary").pack(side="left", padx=(0, 6))
-        styled_button(btn_frame, "↓ PNG", self._download_png, style="secondary").pack(side="left")
+        styled_button(btn_frame, "+ Add Event", self._add_row).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        styled_button(btn_frame, "↓ SVG", self._download_svg, style="secondary").pack(side="left", fill="x", expand=True, padx=(0, 4))
+        styled_button(btn_frame, "↓ PNG", self._download_png, style="secondary").pack(side="left", fill="x", expand=True)
+
+        btn_frame2 = tk.Frame(sidebar, bg=SURFACE)
+        btn_frame2.pack(fill="x", padx=12, pady=(6, 0))
+
+        styled_button(btn_frame2, "↑ Load Session", self._load_json, style="secondary").pack(fill="x", padx=0, pady=(0, 4))
+        styled_button(btn_frame2, "↓ Save Session", self._save_json, style="secondary").pack(fill="x", padx=0, pady=(0, 4))
+        styled_button(btn_frame2, "↑ Import Events CSV", self._import_csv, style="secondary").pack(fill="x", padx=0)
 
         tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=16, pady=12)
 
-        label(sidebar, "INSTRUCTIONS - Scroll to see all", muted=False, bg=SURFACE).pack(
+        label(sidebar, "INSTRUCTIONS", muted=False, bg=SURFACE).pack(
             anchor="w", padx=16, pady=(0, 8)
         )
 
-        instructions_text = """Add rows to define events along your transcript.
+        instructions_text = (
+            "Add rows to define events along your transcript.\n\n"
+            "Position: nucleotide position of the event.\n\n"
+            "Event Type:\n"
+            "stop  — termination codon\n"
+            "init  — start codon\n"
+            "ires  — internal ribosome entry\n"
+            "shift — frameshift (+1, -1, etc.)\n\n"
+            "Probability: chance the event occurs.\n\n"
+            "Drop Probability: chance ribosome dissociates from transcript.\n\n"
+            "For STOP events, Probability is the chance of scanning occurring i.e. leading to "
+            "reinitiation, while drop probability is the likelihood of the STOP acting as a "
+            "normal stop codon\n\n"
+            "Loading Rate controls how many ribosomes are loaded onto the transcript "
+            "(set in Parameters).\n\n"
+            "Adjust Log Reduction to compress the distance between events logarithmically, "
+            "i.e. longer distances get compressed by a greater factor than smaller distances.\n\n"
+            "Bulk Length controls the relative length of the bulk (purple) edges compared to "
+            "a ribosomal flux of 1\n\n"
+            "Height Scale controls the vertical scaling of the graph, namely the distance "
+            "between states, not height relative to length"
+        )
 
-Position: nucleotide position of the event.
+        instr_frame = tk.Frame(sidebar, bg=SURFACE)
+        instr_frame.pack(fill="x", padx=8, pady=(0, 16))
 
-Event Type:
-stop  — termination codon
-init  — start codon
-ires  — internal ribosome entry
-shift — frameshift (+1, -1, etc.)
-
-Probability: chance the event occurs.
-
-Drop Probability: chance ribosome dissociates from transcript.
-
-For STOP events, Probality is the chance of scanning occuring i.e. leading to reinitiation, while \
-drop probability is the likelihood of the STOP acting as a normal stop codon
-
-Loading Rate controls how many ribosomes are loaded onto the transcript (set in Parameters).
-
-Adjust Log Reduction to compress the distance between events logarithmically, \
-i.e. longer distances get compressed by a greater factor than smaller distances.
-
-Bulk Length controls the relative length of the bulk (purple) edges compared to a ribosomal flux of 1
-
-Height Scale controls the vertical scaling of the graph, namely the distance between states, not height relative to length"""
-
+        instr_scroll = ttk.Scrollbar(instr_frame, orient="vertical")
         instructions = tk.Text(
-            sidebar,
+            instr_frame,
             bg=SURFACE,
             fg=TEXT,
             font=("Courier", 10),
@@ -562,12 +689,15 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
             padx=8,
             pady=4,
             highlightthickness=0,
-            state="normal",
             cursor="arrow",
+            yscrollcommand=instr_scroll.set,
         )
+        instr_scroll.config(command=instructions.yview)
+        instr_scroll.pack(side="right", fill="y")
+        instructions.pack(side="left", fill="both", expand=True)
         instructions.insert("1.0", instructions_text)
-        instructions.config(state="disabled")  # read only
-        instructions.pack(fill="x", padx=8, pady=(0, 16))
+        instructions.config(state="disabled")
+        self._instructions = instructions
 
         # ── Main area ─────────────────────────────────────────────────────────
         main = tk.Frame(body, bg=BG)
@@ -578,12 +708,9 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
         rows_header.pack(fill="x", padx=20, pady=(16, 4))
         label(rows_header, "EVENTS", muted=True, bg=BG).pack(side="left")
 
-        
+        rows_outer = tk.Frame(main, bg=SURFACE)
+        rows_outer.pack(fill="x", padx=20)
 
-        rows_outer = tk.Frame(main, bg=SURFACE, bd=0)
-        rows_outer.pack(fill="x", padx=20, pady=(0, 0))
-
-        # Both scrollbars
         self._rows_canvas = tk.Canvas(
             rows_outer, bg=SURFACE, highlightthickness=0, height=200
         )
@@ -591,23 +718,17 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
         rows_scroll_y = ttk.Scrollbar(
             rows_outer, orient="vertical", command=self._rows_canvas.yview
         )
-        self._rows_canvas.configure(
-            yscrollcommand=rows_scroll_y.set
-        )
+        self._rows_canvas.configure(yscrollcommand=rows_scroll_y.set)
 
-        self._rows_canvas.bind("<Enter>", lambda e: self._rows_canvas.bind_all("<MouseWheel>", self._on_rows_mousewheel))
-        self._rows_canvas.bind("<Leave>", lambda e: self._rows_canvas.unbind_all("<MouseWheel>"))
-    
+        self.bind_all("<MouseWheel>", self._on_rows_mousewheel)
+        self.bind_all("<Button-4>",   self._on_rows_mousewheel)
+        self.bind_all("<Button-5>",   self._on_rows_mousewheel)
 
-
-    
         rows_scroll_y.pack(side="right", fill="y")
         self._rows_canvas.pack(fill="both", expand=True)
 
         self._rows_inner = tk.Frame(self._rows_canvas, bg=SURFACE)
-        self._rows_canvas_window = self._rows_canvas.create_window(
-            (0, 0), window=self._rows_inner, anchor="nw"
-        )
+        self._rows_canvas.create_window((0, 0), window=self._rows_inner, anchor="nw")
         self._rows_inner.bind(
             "<Configure>",
             lambda e: self._rows_canvas.configure(
@@ -616,7 +737,7 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
         )
 
         self.row_table = RowTable(
-            self._rows_inner, SCHEMA, on_change=self._schedule_render
+            self._rows_inner, SCHEMA, on_change=self._render, on_dirty=self._on_dirty
         )
         self.row_table.pack(padx=12, pady=8, anchor="nw")
 
@@ -627,33 +748,57 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
         preview_header.pack(fill="x", padx=20, pady=(0, 8))
         label(preview_header, "PREVIEW", muted=True, bg=BG).pack(side="left")
 
-        self.svg_canvas = SVGCanvas(main)
+        self.svg_canvas = SVGCanvas(main, on_svg_ready=self._store_svg)
         self.svg_canvas.pack(fill="both", expand=True, padx=20, pady=(0, 16))
         self.svg_canvas.clear()
 
         self.after(100, self._add_row)
 
+    def _on_rows_mousewheel(self, event):
+        # Determine scroll direction
+        if event.num == 4:
+            delta = -1
+        elif event.num == 5:
+            delta = 1
+        else:
+            delta = int(-1 * (event.delta / 120))
+
+        # Route to whichever scrollable area the pointer is over
+        w = event.widget
+        while w is not None:
+            if w is self._rows_canvas:
+                self._rows_canvas.yview_scroll(delta, "units")
+                return
+            if w is self._instructions:
+                self._instructions.yview_scroll(delta, "units")
+                return
+            w = getattr(w, "master", None)
+
+    def _store_svg(self, svg_text):
+        self._last_svg = svg_text
+
     def _add_row(self):
         self.row_table.add_row()
 
-    def _schedule_render(self, delay=150):
+    def _schedule_render(self, delay=600):
         if self._render_timer:
             self.after_cancel(self._render_timer)
         self._render_timer = self.after(delay, self._render)
+
+    def _on_dirty(self):
+        self.svg_canvas.clear("Modified — press Enter or Tab to render")
 
     def _render(self):
         rows   = self.row_table.rows
         params = self.param_panel.get_values()
 
+        self.svg_canvas.show_loading()
         self._render_gen += 1
         my_gen = self._render_gen  # capture at dispatch time
 
         def do_render():
             try:
-                from backend.render import render_svg
-                import copy
-
-                result = render_svg(copy.deepcopy(rows), params)
+                result = render_svg([dict(r) for r in rows], params)
 
                 if isinstance(result, tuple):
                     svg_text, png_bytes = result
@@ -670,32 +815,305 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
                     msg = svg_text if isinstance(svg_text, str) else "Unknown error"
                     self.after(0, lambda m=msg: self.svg_canvas.clear(f"⚠ {m}"))
             except Exception as e:
-                import traceback
                 traceback.print_exc()
                 if my_gen == self._render_gen:
                     self.after(0, lambda m=str(e): self.svg_canvas.clear(f"Error: {m}"))
 
         threading.Thread(target=do_render, daemon=True).start()
 
+    def _save_json(self):
+        path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialfile="session.json",
+        )
+        if not path:
+            return
+        data = {
+            "params": self.param_panel.get_values(),
+            "events": self.row_table.rows,
+        }
+        try:
+            with open(path, "w") as f:
+                json.dump(data, f, indent=2)
+        except OSError as e:
+            messagebox.showerror("Save failed", f"Could not write file:\n{e}")
+
+    def _show_import_errors(self, errors):
+        """Display all validation errors in a scrollable dialog."""
+        win = tk.Toplevel(self)
+        win.title("Import Errors")
+        win.configure(bg=SURFACE)
+        win.geometry("540x360")
+        win.resizable(True, True)
+
+        tk.Label(
+            win,
+            text=f"{len(errors)} error(s) found — file was not imported:",
+            bg=SURFACE, fg=DANGER, font=MONO,
+        ).pack(anchor="w", padx=16, pady=(12, 4))
+
+        frame = tk.Frame(win, bg=SURFACE)
+        frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+
+        sb = ttk.Scrollbar(frame, orient="vertical")
+        txt = tk.Text(
+            frame, bg=BG, fg=TEXT, font=MONO_S, relief="flat",
+            highlightthickness=0, wrap="word",
+            yscrollcommand=sb.set, state="normal",
+        )
+        sb.config(command=txt.yview)
+        sb.pack(side="right", fill="y")
+        txt.pack(fill="both", expand=True)
+
+        for err in errors:
+            txt.insert("end", f"• {err}\n")
+        txt.config(state="disabled")
+
+        styled_button(win, "Close", win.destroy).pack(pady=(0, 12))
+
+    def _import_csv(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        schema      = SCHEMA["row"]
+        valid_types = set(schema["type"]["options"])
+        params      = self.param_panel.get_values()
+        errors      = []
+        rows        = []
+
+        try:
+            with open(path, newline="") as f:
+                reader = csv.DictReader(f)
+
+                if reader.fieldnames is None:
+                    errors.append("File is empty or has no header row.")
+                    self._show_import_errors(errors)
+                    return
+
+                missing_cols = [c for c in schema if c not in reader.fieldnames]
+                if missing_cols:
+                    errors.append(f"Missing columns: {', '.join(missing_cols)}")
+                    self._show_import_errors(errors)
+                    return
+
+                raw_rows = list(reader)
+                if not raw_rows:
+                    errors.append("File contains a header but no data rows.")
+                    self._show_import_errors(errors)
+                    return
+
+                for i, raw in enumerate(raw_rows, start=1):
+                    row = {}
+                    for key, spec in schema.items():
+                        val = raw.get(key, "").strip()
+                        if val == "":
+                            errors.append(f"Row {i} — '{key}': value is empty.")
+                            continue
+                        t = spec["type"]
+                        if t == "int":
+                            try:
+                                val = int(val)
+                            except ValueError:
+                                errors.append(f"Row {i} — '{key}': expected integer, got '{val}'.")
+                                continue
+                            mn = spec.get("min")
+                            mx = params.get(spec["max_param"]) if "max_param" in spec else spec.get("max")
+                            if mn is not None and val < mn:
+                                errors.append(f"Row {i} — '{key}': {val} is below minimum ({mn}).")
+                                continue
+                            if mx is not None and val > mx:
+                                errors.append(f"Row {i} — '{key}': {val} exceeds maximum ({mx}).")
+                                continue
+                        elif t == "float":
+                            try:
+                                val = float(val)
+                            except ValueError:
+                                errors.append(f"Row {i} — '{key}': expected number, got '{val}'.")
+                                continue
+                            mn, mx = spec.get("min"), spec.get("max")
+                            if mn is not None and val < mn:
+                                errors.append(f"Row {i} — '{key}': {val} is below minimum ({mn}).")
+                                continue
+                            if mx is not None and val > mx:
+                                errors.append(f"Row {i} — '{key}': {val} exceeds maximum ({mx}).")
+                                continue
+                        elif t == "select":
+                            if val not in valid_types:
+                                errors.append(
+                                    f"Row {i} — '{key}': '{val}' is not valid. "
+                                    f"Must be one of: {', '.join(sorted(valid_types))}."
+                                )
+                                continue
+                        row[key] = val
+
+                    if len(row) == len(schema):
+                        if row.get("prob", 0) + row.get("drop_prob", 0) > 1:
+                            errors.append(
+                                f"Row {i} — 'prob' + 'drop_prob' ({row['prob']} + {row['drop_prob']}) "
+                                f"exceeds 1.0."
+                            )
+                        else:
+                            rows.append(row)
+
+        except OSError as e:
+            messagebox.showerror("Import failed", f"Could not read file:\n{e}")
+            return
+
+        if errors:
+            self._show_import_errors(errors)
+            return
+
+        if len(rows) > MAX_EVENTS:
+            messagebox.showwarning(
+                "Too many rows",
+                f"File contains {len(rows)} events but the limit is {MAX_EVENTS}. "
+                f"Only the first {MAX_EVENTS} will be imported."
+            )
+            rows = rows[:MAX_EVENTS]
+
+        self.row_table.rows = rows
+        self.row_table._redraw()
+        self._render()
+
+    def _load_json(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except OSError as e:
+            messagebox.showerror("Load failed", f"Could not read file:\n{e}")
+            return
+        except json.JSONDecodeError as e:
+            messagebox.showerror("Load failed", f"Invalid JSON:\n{e}")
+            return
+
+        if not isinstance(data, dict):
+            messagebox.showerror("Load failed", "File does not contain a JSON object.")
+            return
+
+        errors = []
+
+        # ── Validate params ──────────────────────────────────────────────────
+        raw_params = data.get("params", {})
+        valid_params = {}
+        for key, spec in SCHEMA["params"].items():
+            if key not in raw_params:
+                errors.append(f"params — '{key}': missing.")
+                continue
+            val = raw_params[key]
+            t = spec["type"]
+            try:
+                val = int(val) if t == "int" else float(val)
+            except (TypeError, ValueError):
+                errors.append(f"params — '{key}': expected {'integer' if t == 'int' else 'number'}, got {val!r}.")
+                continue
+            mn, mx = spec.get("min"), spec.get("max")
+            if mn is not None and val < mn:
+                errors.append(f"params — '{key}': {val} is below minimum ({mn}).")
+                continue
+            if mx is not None and val > mx:
+                errors.append(f"params — '{key}': {val} exceeds maximum ({mx}).")
+                continue
+            valid_params[key] = val
+
+        # ── Validate events ──────────────────────────────────────────────────
+        raw_events = data.get("events", [])
+        if not isinstance(raw_events, list):
+            errors.append("'events' must be a list.")
+            raw_events = []
+
+        row_schema  = SCHEMA["row"]
+        valid_types = set(row_schema["type"]["options"])
+        rows        = []
+        transcript_length = valid_params.get("transcript_length",
+                            SCHEMA["params"]["transcript_length"]["default"])
+
+        for i, raw in enumerate(raw_events, start=1):
+            if not isinstance(raw, dict):
+                errors.append(f"Event {i}: expected an object, got {type(raw).__name__}.")
+                continue
+            row = {}
+            for key, spec in row_schema.items():
+                if key not in raw:
+                    errors.append(f"Event {i} — '{key}': missing.")
+                    continue
+                val = raw[key]
+                t   = spec["type"]
+                if t == "int":
+                    try:
+                        val = int(val)
+                    except (TypeError, ValueError):
+                        errors.append(f"Event {i} — '{key}': expected integer, got {val!r}.")
+                        continue
+                    mn = spec.get("min")
+                    mx = transcript_length if "max_param" in spec else spec.get("max")
+                    if mn is not None and val < mn:
+                        errors.append(f"Event {i} — '{key}': {val} is below minimum ({mn}).")
+                        continue
+                    if mx is not None and val > mx:
+                        errors.append(f"Event {i} — '{key}': {val} exceeds maximum ({mx}).")
+                        continue
+                elif t == "float":
+                    try:
+                        val = float(val)
+                    except (TypeError, ValueError):
+                        errors.append(f"Event {i} — '{key}': expected number, got {val!r}.")
+                        continue
+                    mn, mx = spec.get("min"), spec.get("max")
+                    if mn is not None and val < mn:
+                        errors.append(f"Event {i} — '{key}': {val} is below minimum ({mn}).")
+                        continue
+                    if mx is not None and val > mx:
+                        errors.append(f"Event {i} — '{key}': {val} exceeds maximum ({mx}).")
+                        continue
+                elif t == "select":
+                    if val not in valid_types:
+                        errors.append(
+                            f"Event {i} — '{key}': '{val}' is not valid. "
+                            f"Must be one of: {', '.join(sorted(valid_types))}."
+                        )
+                        continue
+                row[key] = val
+
+            if len(row) == len(row_schema):
+                if row.get("prob", 0) + row.get("drop_prob", 0) > 1:
+                    errors.append(
+                        f"Event {i} — 'prob' + 'drop_prob' ({row['prob']} + {row['drop_prob']}) "
+                        f"exceeds 1.0."
+                    )
+                else:
+                    rows.append(row)
+
+        if errors:
+            self._show_import_errors(errors)
+            return
+
+        if len(rows) > MAX_EVENTS:
+            messagebox.showwarning(
+                "Too many events",
+                f"File contains {len(rows)} events but the limit is {MAX_EVENTS}. "
+                f"Only the first {MAX_EVENTS} will be loaded."
+            )
+            rows = rows[:MAX_EVENTS]
+
+        self.param_panel.set_values(valid_params)
+        self.row_table.rows = rows
+        self.row_table._redraw()
+        self._render()
+
     def _download_svg(self):
         if not self._last_svg:
-            # trigger a render first
-            rows   = self.row_table.rows
-            params = self.param_panel.get_values()
-            if not rows:
-                messagebox.showinfo("No data", "Add events before downloading.")
-                return
-            try:
-                from backend.render import render_svg
-                result = render_svg(rows, params)
-                if isinstance(result, str) and result.startswith("<svg"):
-                    self._last_svg = result
-                else:
-                    messagebox.showerror("Error", str(result))
-                    return
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-                return
+            messagebox.showinfo("No data", "Add events and wait for the preview to render before downloading.")
+            return
 
         path = filedialog.asksaveasfilename(
             defaultextension=".svg",
@@ -722,16 +1140,10 @@ Height Scale controls the vertical scaling of the graph, namely the distance bet
                 f.write(png_bytes)
 
 
-
 if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
 
-    # Force numpy/pandas to initialize in main thread before any background threads
-    import numpy
-    import pandas
-    import networkx
-    import matplotlib
     matplotlib.use('Agg')
 
     app = App()

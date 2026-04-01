@@ -2,11 +2,9 @@
 
 import networkx as nx
 import matplotlib.pyplot as plt
+from dynordg import TransitionMap
+from dynordg import RiboGraphFlux
 
-from .ribograph import TransitionMap
-
-
-            
 
     
 transition_list = [ 
@@ -21,11 +19,10 @@ transition_list = [
 
 x = TransitionMap()
 x.add_weighted_edges_from(transition_list)
-y = x.to_fluxgraph(half_life_scanning=10, half_life_translation=10)
-
+y = RiboGraphFlux.from_transition_map(x)
 pos = nx.planar_layout(y)
 
 nx.draw_networkx_edge_labels(y, pos)
 print(y.edges.data())
-nx.draw(y, pos=pos, with_labels=True)
-plt.show()
+# nx.draw(y, pos=pos, with_labels=True)
+# plt.show()

@@ -9,4 +9,6 @@ app_tk.*/
 .~*
 *csv
 *json
+.vscode
+.gitignore
 

@@ -1,7 +1,7 @@
 from ..graph import RiboGraph
 from .transitionmap import TransitionMap
 from ..core import RiboEvent, RiboNode, RiboTransition
-
+import networkx as nx
 
 class RiboGraphFlux(RiboGraph):
     def __init__(self, transition_map: TransitionMap, incoming_graph_data=None, half_life_scanning = None, half_life_translation = None, **attr):
@@ -38,7 +38,7 @@ class RiboGraphFlux(RiboGraph):
 
                             node.phase))
     
-    def _iterate_graph(self, node: RiboNode, flux):
+    def _iterate_graph(self, node: RiboNode, flux, weight=1):
 
         ###### Handle return to starting node ######
         if self.begun and node == self.bulk_node:
@@ -54,26 +54,24 @@ class RiboGraphFlux(RiboGraph):
 
         endflux = flux * self.edge_decay(node, next_node)
         drop_flux = flux - endflux
-        print(node, 'flux:', flux, 'end_flux:', endflux, 'drop_flux:', drop_flux)
         if drop_flux != 0:
-            self.add_edge(next_node, self.bulk_node, flux_start=drop_flux, flux_end=drop_flux) # this is the drop edge
-
-        self.add_edge(node, next_node, flux_start=flux, flux_end = endflux) # this is the horizontal edge
+            self.add_edge(next_node, self.bulk_node, flux_start=drop_flux, flux_end=drop_flux, weight=weight*drop_flux/flux) # this is the drop edge
+        self.add_edge(node, next_node, flux_start=flux, flux_end = endflux, weight=weight*endflux/flux) # this is the horizontal edge
 
         #### calculate flux for each edge off next node ####
 
-        total_weight = 1
+        remaining_weight = 1
         for u, v, w in self.transitions.out_edges(next_node, data='weight'):
-            total_weight -= w
+            remaining_weight -= w
             new_flux = endflux * w
-            self.add_edge(u, v, flux_start=new_flux, flux_end=new_flux)
+            self.add_edge(u, v, flux_start=new_flux, flux_end=new_flux, weight=w)
             self._iterate_graph(v, new_flux)
 
         #### Continue graph on same phase if weight remaining ####
-        if total_weight == 0:
+        if remaining_weight == 0:
             return None
         else:
-            self._iterate_graph(next_node, endflux*total_weight)
+            self._iterate_graph(next_node, endflux*remaining_weight, weight=remaining_weight)
     
     def add_transition(self, source, target, probability):
         """
@@ -93,7 +91,7 @@ class RiboGraphFlux(RiboGraph):
         self._construct
 
     def edge_decay(self, u: RiboNode, v: RiboNode):
-        if u.phase == v.phase:
+        if u.phase == v.phase or (u.phase > 0 and v.phase > 0):
             if u.phase > 0:
                 half_life = self.half_life_translation
             elif u.phase == 0:
@@ -111,6 +109,74 @@ class RiboGraphFlux(RiboGraph):
 
     def _is_valid(self):
         self._valid_in_out()
+
+    @property
+    def ribopaths(self) -> list:
+        """
+        Returns a list of the paths with continued 40S association, each as a list of edge tuples.
+        """
+        paths = []
+        for loading in self.successors(self.bulk_node):
+            paths.extend(nx.all_simple_edge_paths(self, loading, self.bulk_node))
+        return paths
+    
+    @property
+    def translons(self) -> list:
+        """
+        Returns a list of all translons in the graph (continued 60S association) as a list of edge tuples
+        """
+        translon_list = []
+        for path in self.ribopaths:
+            translon = False
+            current_translon = []
+            for edge in path:
+
+                if translon:
+                    if edge[1].phase < 1:
+                        translon = False
+                        translon_list.append(current_translon)
+
+                    else:
+                        current_translon.append(edge)
+
+                elif edge[0].phase > 0:
+                    translon = True
+                    current_translon.append(edge)
+
+        return translon_list
+
+    def flux_proportion(self, path: list[tuple[RiboNode,RiboNode]]) -> float|None:
+        if path is not None:
+            weights = nx.get_edge_attributes(self, name='weight')
+            paths_to_start = nx.all_simple_edge_paths(self, self.bulk_node, path[0][0])
+            proportion = 1.0
+
+
+            if paths_to_start is None:
+                raise ValueError(f"No path exists from {self.bulk_node} to {self[0][0]}")
+            
+            start_proportion = 0
+            for _path in paths_to_start:
+                for edge in _path:
+                    proportion *= weights[edge]
+                start_proportion += proportion
+
+
+            proportion = start_proportion
+            if path[-1][1] != self.bulk_node:
+                for finish_edge in self.out_edges(path[-1][1]):
+                    if finish_edge[1].phase < 1:
+                        new_path = path.copy()
+                        for edge in new_path:
+                            proportion *= weights[edge]
+                
+            else:
+                for edge in path:
+                    proportion *= weights[edge]
+        else:
+            raise ValueError('No weight associated with empty path')
+
+        return proportion
 
     def _valid_in_out(self):
         out_flux = 0

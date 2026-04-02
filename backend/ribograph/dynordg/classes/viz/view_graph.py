@@ -2,8 +2,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.figure import Figure
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from networkx import DiGraph
+import math
+
+from backend.ribograph.dynordg.classes.simulation.transitionmap import TransitionMap
 from ..core import RiboNode
+from ..graph import RiboGraph
 
 if TYPE_CHECKING:
     from ..simulation import RiboGraphFlux
@@ -12,7 +17,7 @@ if TYPE_CHECKING:
 class CanvasPos(tuple):
     def __new__(cls, *args):
         
-        if len(args) == 1 and isinstance(args[0], (tuple, CanvasPos)):
+        if len(args) == 1 and isinstance(args[0], (tuple, CanvasPos, RiboNode)):
             coords = args[0]
         elif len(args) == 2:
             coords = args
@@ -44,6 +49,16 @@ class EdgeData:
         self.target = target
         self.vertical = None
         self.event = source.phase == target.phase
+        self.source_x = source.position
+        self.source_y = source.phase
+        self.target_x = target.position
+        self.target_y = target.phase
+
+        if self.target_y == -1:
+            self.target_y = None
+
+        if self.source_y == -1:
+            self.source_y = None
 
     @property
     def _edge_type(self):
@@ -66,25 +81,58 @@ class EdgeData:
 
 
 
-class RiboGraphVis:
+class RiboGraphVis(RiboGraph):
     """
     Holds all precomputed visualisation data for a RiboGraphFlux.
     Eager: all layout and render data is computed at construction time.
     """
 
-    def __init__(self, fluxgraph: "RiboGraphFlux", figsize=(12, 8), dpi=150):
-        self.fluxgraph = fluxgraph
-        self.figsize = figsize
+    def __init__(self, incoming_graph_data: RiboGraphFlux, fig_size = (12,6), dpi = 150,  **attr):
+        self.fig_size = fig_size
         self.dpi = dpi
+        
+        super().__init__(incoming_graph_data, **attr)
+        for node in self.nodes:
+            node.x = node.position
 
-        # Computed eagerly at construction
-        self.layout: SankeyLayout = self._compute_layout()
-        self.fig: Figure = self._render()
+    
+    def _log_scale_nodes_position(self, factor:float):
+        x_pos =[]
+        for node in self.nodes:
+            x_pos.append(node.x)
+        x_pos = set(x_pos)
 
-    def _compute_layout(self) -> SankeyLayout:
+        
+        gaps = [x_pos[i+1] - x_pos[i] for i in range(len(x_pos)-1)]
+        log_gaps = [math.log(g, factor) + 1 for g in gaps]
+
+        if log_reduction > 1: #SCALE GRAPH BASED ON LOG VALUES OF DISTANCES
+            # --- Compute unique sorted x positions ---
+            x_pos = sorted(set(list(out['source_x']) + [out['target_x'].iloc[-1]]))
+
+            # --- Compute gaps and log-scale ---
+            gaps = [x_pos[i+1] - x_pos[i] for i in range(len(x_pos)-1)]
+            log_gaps = [math.log(g, log_reduction) + 1 for g in gaps]
+
+            # --- Map original x to log-scaled x ---
+            log_x_pos = [x_pos[0]]
+            for gap in log_gaps:
+                log_x_pos.append(log_x_pos[-1] + gap)
+
+            log_map = dict(zip(x_pos, log_x_pos))
+
+            out['source_x'] = out['source_x'].map(log_map)
+            out['target_x'] = out['target_x'].map(log_map)
+
+    def _compute_layout(self):
         """Extract and precompute all geometry from the fluxgraph."""
 
         for node in self.fluxgraph.nodes:
+            pass
+
+    def _scale_graph(self):
+        
+    def
 
 
     def _render(self) -> Figure:

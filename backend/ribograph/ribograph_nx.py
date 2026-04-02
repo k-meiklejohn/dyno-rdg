@@ -2,8 +2,7 @@
 
 import networkx as nx
 import matplotlib.pyplot as plt
-from dynordg import TransitionMap
-from dynordg import RiboGraphFlux
+import dynordg as dr
 
 
     
@@ -17,12 +16,16 @@ transition_list = [
     ((30,1), (-1,-1), 1)
     ]
 
-x = TransitionMap()
+x = dr.TransitionMap()
 x.add_weighted_edges_from(transition_list)
-y = RiboGraphFlux.from_transition_map(x)
+y = dr.RiboGraphFlux.from_transition_map(x)
 pos = nx.planar_layout(y)
 
 nx.draw_networkx_edge_labels(y, pos)
-print(y.edges.data())
-# nx.draw(y, pos=pos, with_labels=True)
+for path in y.ribopaths:
+    print(path, y.flux_proportion(path))
+    print('----------------------------------------')
+for translon in y.translons:
+    print(translon, y.flux_proportion(translon))
+# # nx.draw(y, pos=pos, with_labels=True)
 # plt.show()

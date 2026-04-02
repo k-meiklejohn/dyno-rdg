@@ -20,6 +20,7 @@ class RiboGraph(DiGraph):
             raise TypeError(f"Ribograph only accepts RiboNodes or RiboNode-like tuples, got {type(node_for_adding).__name__!r}")
         super().add_node(node_for_adding, **attr)
     
+    
     def add_nodes_from(self, nodes_for_adding, **attr):
         for node in nodes_for_adding:
             n = node[0] if isinstance(node, tuple) else node

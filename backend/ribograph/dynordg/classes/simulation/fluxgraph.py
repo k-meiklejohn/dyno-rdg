@@ -15,7 +15,7 @@ class RiboGraphFlux(RiboGraph):
 
     @classmethod
     def from_transition_map(cls, transition_map, half_life_translation=None, half_life_scanning=None):
-        return cls(transition_map=transition_map)
+        return cls(transition_map=transition_map, half_life_scanning=half_life_scanning, half_life_translation=half_life_translation)
     
     def _construct(self):
         node = RiboNode((-1,-1))
@@ -29,7 +29,7 @@ class RiboGraphFlux(RiboGraph):
         if not any([p.position > node.position 
                             and p.phase == node.phase
                             for p in self.transitions.nodes ]):
-            return None
+            return self.bulk_node
             
         return RiboNode(( min([p.position
                             for p in self.transitions.nodes 
@@ -55,8 +55,10 @@ class RiboGraphFlux(RiboGraph):
         endflux = flux * self.edge_decay(node, next_node)
         drop_flux = flux - endflux
         if drop_flux != 0:
-            self.add_edge(next_node, self.bulk_node, flux_start=drop_flux, flux_end=drop_flux, weight=weight*drop_flux/flux) # this is the drop edge
-        self.add_edge(node, next_node, flux_start=flux, flux_end = endflux, weight=weight*endflux/flux) # this is the horizontal edge
+            drop_node = RiboNode(next_node.position, -1)
+            self.add_edge(next_node, drop_node, flux_start=drop_flux, flux_end=drop_flux, weight=weight*drop_flux/flux) # this is the drop edge
+            self.add_edge(drop_node, self.bulk_node, flux_start=drop_flux, flux_end=drop_flux, weight=1) #returning to the bulk
+        self.add_edge(node, next_node, flux_start=flux, flux_end = endflux, weight=weight*endflux/flux, decay=drop_flux) # this is the horizontal edge
 
         #### calculate flux for each edge off next node ####
 
@@ -98,14 +100,13 @@ class RiboGraphFlux(RiboGraph):
                 half_life = self.half_life_scanning
             else:
                 return 1
-            
             if half_life == None:
                 return 1
             
             return 0.5 ** (abs(u.position-v.position) / half_life )
         
         else:
-            ValueError(f"Edge: {u}, {v} is not capable of decay")
+            raise ValueError(f"Edge: {u}, {v} is not capable of decay")
 
     def _is_valid(self):
         self._valid_in_out()

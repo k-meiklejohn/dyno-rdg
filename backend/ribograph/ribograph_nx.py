@@ -27,4 +27,4 @@ for u, v, data in z.edges(data=True):
     print(u, v)
     print(data)
 
-# z.show()
+z.show()

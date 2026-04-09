@@ -17,14 +17,16 @@ transition_list = [
 
 x = dr.TransitionMap()
 x.add_weighted_edges_from(transition_list)
-y = dr.RiboGraphFlux.from_transition_map(x)
+y = dr.RiboGraphFlux.from_transition_map(x
+                                         , half_life_scanning=5, half_life_translation=5
+                                         )
 
 
 
 z = dr.RiboGraphVis(y)
-for u, v, data in z.edges(data=True):
-    print('=====================================')
-    print(u, v)
-    print(data)
+# for u, v, data in z.edges(data=True):
+#     print('=====================================')
+#     print(u, v)
+#     print(data)
 
 z.show()

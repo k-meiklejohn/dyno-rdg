@@ -41,8 +41,7 @@ class RiboGraphVis(RiboGraph):
     }
 
     EDGE_Y_KEYS = (
-        'bot_right', 'top_right', 'bot_left', 'top_left',
-        'decay_bot_right', 'decay_top_right'
+        'out0', 'in0', 'out1', 'in1', "deacy0", "decay1", "decay2"
     )
 
     # ── Construction ─────────────────────────────────────────────────────────
@@ -86,6 +85,8 @@ class RiboGraphVis(RiboGraph):
         self._align_horizontal_edges()
         self._bulk_edge_source_position(2)
         self._adjust_phase_positions(1)
+        self._bulk_edge_source_position(2)
+        self._align_events()
         self.fig = self._render()
 
     # ── Graph preparation ────────────────────────────────────────────────────
@@ -165,7 +166,6 @@ class RiboGraphVis(RiboGraph):
                 for _, _, data in self.in_edges(node, data=True)
             )
             self[bulk_node][node]['direction'] = -1 if total >= 0 else 1
-            self.nodes[node]['drop_direction'] = -1 if total >= 0 else 1
 
         if (node, bulk_node) in self.edges:
             total = sum(
@@ -173,7 +173,7 @@ class RiboGraphVis(RiboGraph):
                 for _, _, data in self.out_edges(node, data=True)
             )
             self[node][bulk_node]['direction'] = -1 if total > 0 else 1
-            self.nodes[node]['drop_direction'] = -1 if total > 0 else 1
+            self.nodes[node]['drop_direction'] = self[node][bulk_node]['direction']
 
     def _bulk_node_at(self, position):
         """Return the bulk RiboNode at the given position, or None."""
@@ -190,7 +190,7 @@ class RiboGraphVis(RiboGraph):
         ]
 
     def _edge_sort_key(self, edge, edge_order):
-        u, v, data = edge
+        _, _, data = edge
         etype     = data['type']
         direction = data['direction']
         shift_n   = data.get('shift_n', 0)
@@ -219,18 +219,23 @@ class RiboGraphVis(RiboGraph):
 
     def _layout_side(self, node, edges, side, flux_key):
         sign  = -1 if side == 'left' else 1
-        outer = side
-        inner = 'left' if side == 'right' else 'right'
+
         x = self.nodes[node]['x']
         # ── bottom diagonals (direction == sign) ─────────────────────────
         x_offset  = 0
         current_y = 0
-        bottom = [(u, v) for u, v, d in edges if d == -sign]
-        for u, v in bottom:
 
+        bottom_d = -1 if side == 'right' else 1
+        top_d    = bottom_d * -1
+        inout = 'in' if side == 'left' else 'out'
+
+
+        bottom = [(u, v) for u, v, d in edges if d == bottom_d]
+        for u, v in bottom:
+            print(u, v, current_y)
             flux = self[u][v][flux_key]
-            self[u][v]['top_' + inner] = (x + x_offset,               current_y)
-            self[u][v]['top_' + outer] = (x + x_offset + sign * flux,  current_y)
+            self[u][v][inout + '0'] = (x + x_offset,                current_y)
+            self[u][v][inout + '1'] = (x + x_offset + sign * flux,  current_y)
             if x_offset != 0:
                 self.nodes[node]['helper_rects'].append(
                     ((x + x_offset, current_y),
@@ -248,40 +253,48 @@ class RiboGraphVis(RiboGraph):
             start_flux = self[u][v]['flux_start']
             end_flux   = self[u][v]['flux_end']
             decay      = start_flux - end_flux
+            self[u][v][inout + '_bot']  = current_y
 
-            if side == 'right':
-                self[u][v]['src_bot']  = current_y
-                self[u][v]['bot_left'] = (x, current_y)
-                self[u][v]['top_left'] = (x, current_y + flux)
-            else:
-                self[u][v]['tgt_bot'] = current_y
-                if decay > 0:
+            
+            if side == 'left':
+                if 'drop_direction' in self.nodes[node].keys():
                     if self.nodes[node]['drop_direction'] == 1:
-                        self[u][v]['bot_right']      = (x, current_y)
-                        self[u][v]['top_right']       = (x, current_y + flux)
-                        self[u][v]['decay_bot_right'] = (x, current_y + flux)
-                        self[u][v]['decay_top_right'] = (x, current_y + flux + decay)
-                        u.decay_side = 'top'
+                        self[u][v]['in1']      = (x, current_y)
+                        self[u][v]['in0']       = (x, current_y + flux)
+                        self[u][v]['decay1'] = (x, current_y + flux)
+                        self[u][v]['decay2'] = (x, current_y + flux + decay)
+                        continue
                     else:
-                        self[u][v]['bot_right']      = (x, current_y + decay)
-                        self[u][v]['top_right']       = (x, current_y + decay + flux)
-                        self[u][v]['decay_bot_right'] = (x, current_y)
-                        self[u][v]['decay_top_right'] = (x, current_y + decay)
-                        u.decay_side = 'bottom'
+                        self[u][v]['in1']      = (x, current_y + decay)
+                        self[u][v]['in0']       = (x, current_y + decay + flux)
+                        self[u][v]['decay1'] = (x, current_y)
+                        self[u][v]['decay2'] = (x, current_y + decay)
+                        continue
+                    
+                self[u][v][inout + '1'] = (x, current_y)
+                self[u][v][inout + '0'] = (x, current_y + flux)
+            
+            else:   
+                self[u][v]['out0'] = (x, current_y)
+                self[u][v]['out1'] = (x, current_y + flux)
+                if self.nodes[v]['drop_direction'] == -1:
+                    self[u][v]['decay0'] =  self[u][v]['out0']
                 else:
-                    self[u][v]['bot_right'] = (x, current_y)
-                    self[u][v]['top_right'] = (x, current_y + flux)
+                    self[u][v]['decay0'] = self[u][v]['out1']
+
+
 
             current_y += flux + decay
 
         # ── top diagonals (direction == -sign) ───────────────────────────
         x_offset  = 0
         current_y = sum(self[u][v][flux_key] for u, v, _ in edges)
-        top = [(u, v) for u, v, d in edges if d == sign]
+        top = [(u, v) for u, v, d in edges if d == top_d]
         for u, v in reversed(top):
             flux = self[u][v][flux_key]
-            self[u][v]['bot_' + inner] = (x + x_offset,               current_y)
-            self[u][v]['bot_' + outer] = (x + x_offset + sign * flux,  current_y)
+            self[u][v][inout + '0'] = (x + x_offset,               current_y)
+            self[u][v][inout + '1'] = (x + x_offset + sign * flux,  current_y)
+
             if x_offset != 0:
                 self.nodes[node]['helper_rects'].append(
                     ((x + x_offset + sign * flux, current_y),
@@ -298,46 +311,48 @@ class RiboGraphVis(RiboGraph):
             for node in topological_sort(self)
             if node.phase != -1
             for u, v, data in self.out_edges(node, data=True)
-            if data.get('direction') == 0
+            if not data.get('event')
         ]
 
         for u, v, data in h_edges:
-            src_bot    = data['src_bot']
-            tgt_bot    = data['tgt_bot']
+
+            src_bot    = data['out_bot']
+            tgt_bot    = data['in_bot']
             agreed_bot = max(src_bot, tgt_bot)
 
             if agreed_bot > src_bot:
-                self._shift_node(u, agreed_bot - src_bot)
+                self._shift_node(u, agreed_bot - src_bot, 'y')
             if agreed_bot > tgt_bot:
-                self._shift_node(v, agreed_bot - tgt_bot)
+                self._shift_node(v, agreed_bot - tgt_bot, 'y')
 
-    def _shift_node(self, node, delta):
+    def _shift_node(self, node, delta, xy):
         """
-        Shift all y-coordinates owned by this node.
-        Ownership is split: each node owns the side it laid out.
-          - out_sorted_edges: source owns left-side keys (bot_left, top_left, src_bot)
-          - in_sorted_edges:  target owns right-side keys (bot_right, top_right,
-                              decay_*, tgt_bot)
+        Shift all edge y-coordinates owned by this node.
         """
         if node.phase == -1:
             return
-
+        
         owned = {
-            'out': ('bot_left',  'top_left'),
-            'in':  ('bot_right', 'top_right', 'decay_bot_right',
-                    'decay_top_right'),
+            'out': ['out0', 'out1', 'decay0'],
+            'in':  ['in0', 'in1', 'decay1', 'decay2']
         }
 
-        for edges, keys in (
-            (self.nodes[node]['out_sorted_edges'], owned['out']),
-            (self.nodes[node]['in_sorted_edges'],  owned['in']),
+
+        for edges, side in (
+            (self.out_edges(node), 'out'),
+            (self.in_edges(node),  'in'),
         ):
-            for u, v, _ in edges:
+            for u, v in edges:
                 data = self[u][v]
+                keys = owned[side]
                 for key in keys:
                     if key in data:
                         x, y = data[key]
-                        data[key] = (x, y + delta)
+                        if xy == 'y':
+                            data[key] = (x, y + delta)
+                        elif xy =='x':
+                            data[key] = (x + delta, y)
+
 
         self.nodes[node]['helper_rects'] = [
             ((x0, y0 + delta), (x1, y1 + delta))
@@ -352,49 +367,86 @@ class RiboGraphVis(RiboGraph):
             flux   = data['flux_start']
             length = max(flux * bulk_length_factor, 0.2)
             
-            change_side = 'top' if (
-                (data['direction'] == 1 and v.phase == -1) or
-                (data['direction'] == -1 and v.phase != -1)
-            ) else 'bot'
-
-            get_side = 'bot' if change_side == 'top' else 'top'
+            change_side = 'in' if v.phase == -1 else 'out'
+            get_side = 'in' if change_side == 'out' else 'out'
 
             # Direction determines whether we go up or down
-            delta = -length if data['direction'] == 1 else length
+            delta = length if data['direction'] == 1 else -length
 
             # Apply transformation consistently
-            print(self[u][v])
-            for pos in ('left', 'right'):
-                x, y = data[f"{get_side}_{pos}"]
-                data[f"{change_side}_{pos}"] = (x, y + delta)
+            for pos in ('0', '1'):
+                opp = '1' if pos =='0' else '0'
+                x, y = data[f"{get_side}{pos}"]
+                data[f"{change_side}{opp}"] = (x, y + delta)
 
     def _adjust_phase_positions(self, buffer: float):
         """Stack phases vertically with a buffer between them."""
         scanning_nodes = [n for n in self.nodes if n.phase == 0]
-        min_y = min(self._phase_y_positions(0))
+        min_y = min(pos[1] for pos in self._edge_position_from_nodes(scanning_nodes, exclusive=True))
         for node in scanning_nodes:
-            self._shift_node(node, -min_y)
+            self._shift_node(node, -min_y, 'y')
 
         skip = 0
+        prev_nodes = scanning_nodes
         for phase in range(1, 4):
             phase_nodes = [n for n in self.nodes if n.phase == phase]
             if not phase_nodes:
                 skip += 1
                 continue
-            min_phase = min(self._phase_y_positions(phase))
-            prev_max  = max(self._phase_y_positions(phase - 1))
+            min_phase = min(pos[1] for pos in self._edge_position_from_nodes(phase_nodes, exclusive=True))
+            if not len(prev_nodes) == 0:
+                prev_max  = max(pos[1] for pos in self._edge_position_from_nodes(prev_nodes, exclusive=True))
             for node in phase_nodes:
-                self._shift_node(node, (prev_max + buffer + skip) - min_phase)
+                self._shift_node(node, (prev_max + buffer + skip) - min_phase, 'y')
+            prev_nodes = phase_nodes
             skip = 0
+    
+    def _align_events(self):
+        for u, v, data in self.edges(data=True):
+            if u.phase == -1 or v.phase == -1:
+                continue
+            if (not data['event']) or (data['type'] == 'shift'):
+                continue
+            difference = data['in1'][0] - data['out1'][0]
+            if difference == 0:
+                continue
+            difference *= data['direction']
+            self._shift_node(u, difference/2, 'x')
+            self._shift_node(v, -difference/2, 'x')
 
-    def _phase_y_positions(self, phase) -> list[float]:
-        phase_nodes = [n for n in self.nodes if n.phase == phase]
-        return [
-            data[key][1]
-            for u, v, data in self.edges(phase_nodes, data=True)
-            for key in self.EDGE_Y_KEYS
-            if key in data
-        ]
+    def _edge_position_from_nodes(self, nbunch, exclusive=False) -> list[tuple[float,float]]:
+        if not isinstance(nbunch, RiboNode):
+            for node in nbunch:
+                if node not in self:
+                    raise ValueError(f'Node: {node} not in Graph')
+        else:
+            if nbunch not in self:
+                raise ValueError(f'Node: {nbunch} not in Graph')
+        nodes = set(nbunch)
+        if exclusive:
+            return [
+                data[key]
+                for u, v, data in self.edges(nbunch, data=True)
+                if u in nodes and v in nodes
+                for key in self.EDGE_Y_KEYS
+                if key in data
+            ]
+        else:
+            return [
+                data[key]
+                for u, v, data in self.edges(nbunch, data=True)
+                for key in self.EDGE_Y_KEYS
+                if key in data
+            ]
+
+    @property
+    def positions(self) -> list[list]:
+        out = []
+        for node in self.nodes:
+            out.extend(self._edge_position_from_nodes(node))
+        return out
+    
+
 
     # ── Rendering ────────────────────────────────────────────────────────────
 
@@ -403,18 +455,26 @@ class RiboGraphVis(RiboGraph):
         ax.set_aspect('equal')
         ax.axis('off')
 
-        for _, _, data in self.edges(data=True):
-            if 'decay_start' in data:
-                ax.add_patch(self._draw_patch(
-                    [data['decay_start'],
-                     data['decay_top_right'],
-                     data['decay_bot_left']],
-                    facecolor='steelblue'))
-            ax.add_patch(self._draw_patch(
-                [data['top_left'], data['top_right'],
-                 data['bot_right'], data['bot_left']],
-                facecolor='steelblue'))
+        all_x = [pos[0] for pos in self.positions]
+        all_y = [pos[1] for pos in self.positions]
 
+        xmin, xmax = min(all_x), max(all_x)
+        ymin, ymax = min(all_y), max(all_y)
+
+        ax.set(xlim=(xmin, xmax), ylim=(ymin, ymax))
+        for u, v, data in self.edges(data=True):
+            if 'decay0' in data.keys():
+                if data['decay1'] != data['decay2']:
+                    ax.add_patch(self._draw_patch(
+                        [data['decay0'],
+                        data['decay1'],
+                        data['decay2']],
+                        facecolor='steelblue'))
+            print(u,v, data)
+            ax.add_patch(self._draw_patch(
+                [data['in0'], data['in1'],
+                 data['out0'], data['out1']],
+                facecolor='steelblue'))
         fig.tight_layout()
         return fig
 

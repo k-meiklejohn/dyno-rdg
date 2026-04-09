@@ -225,9 +225,9 @@ class RiboGraphVis(RiboGraph):
         # ── bottom diagonals (direction == sign) ─────────────────────────
         x_offset  = 0
         current_y = 0
-        for u, v, direction in edges:
-            if direction != sign:
-                continue
+        bottom = [(u, v) for u, v, d in edges if d == -sign]
+        for u, v in bottom:
+
             flux = self[u][v][flux_key]
             self[u][v]['top_' + inner] = (x + x_offset,               current_y)
             self[u][v]['top_' + outer] = (x + x_offset + sign * flux,  current_y)
@@ -239,10 +239,11 @@ class RiboGraphVis(RiboGraph):
             x_offset  += sign * flux
             current_y += flux
 
+        horizontal = [(u, v) for u, v, d in edges if d == 0]
+        assert len(horizontal) <= 1
+    
         # ── horizontal (direction == 0) ───────────────────────────────────
-        for u, v, direction in edges:
-            if direction != 0:
-                continue
+        for u, v in horizontal:
             flux       = self[u][v][flux_key]
             start_flux = self[u][v]['flux_start']
             end_flux   = self[u][v]['flux_end']
@@ -272,12 +273,11 @@ class RiboGraphVis(RiboGraph):
                     self[u][v]['top_right'] = (x, current_y + flux)
 
             current_y += flux + decay
-            break
 
         # ── top diagonals (direction == -sign) ───────────────────────────
         x_offset  = 0
         current_y = sum(self[u][v][flux_key] for u, v, _ in edges)
-        top = [(u, v) for u, v, d in edges if d == -sign]
+        top = [(u, v) for u, v, d in edges if d == sign]
         for u, v in reversed(top):
             flux = self[u][v][flux_key]
             self[u][v]['bot_' + inner] = (x + x_offset,               current_y)
@@ -300,13 +300,8 @@ class RiboGraphVis(RiboGraph):
             for u, v, data in self.out_edges(node, data=True)
             if data.get('direction') == 0
         ]
+
         for u, v, data in h_edges:
-            print(f"  v={v}, id={id(v)}")
-            for node in self.nodes:
-                if node == v:
-                    print(f"  matching node id={id(node)}, has out_sorted_edges={hasattr(node, 'out_sorted_edges')}")
-        for u, v, data in h_edges:
-            print(f"  h_edge {u} -> {v}, u.phase={u.phase}, v.phase={v.phase}")
             src_bot    = data['src_bot']
             tgt_bot    = data['tgt_bot']
             agreed_bot = max(src_bot, tgt_bot)

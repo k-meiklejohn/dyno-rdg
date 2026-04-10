@@ -18,10 +18,14 @@ class RiboGraphFlux(RiboGraph):
         return cls(transition_map=transition_map, half_life_scanning=half_life_scanning, half_life_translation=half_life_translation)
     
     def _construct(self):
-        node = RiboNode((-1,-1))
-        flux = 1
+        for u, v in self.transitions.edges:
+            if u.phase == -1:
+                self.add_edge(self.bulk_node, u)
+                flux = flux=self.transitions[u][v]['weight'] 
+                self.add_edge(u, v, weight=flux, flux_start=flux, flux_end=flux )
 
-        self._iterate_graph(node, flux)
+                self._iterate_graph((v), 1) 
+
         self._is_valid()
 
 
@@ -40,12 +44,9 @@ class RiboGraphFlux(RiboGraph):
     
     def _iterate_graph(self, node: RiboNode, flux, weight=1):
 
-        ###### Handle return to starting node ######
-        if self.begun and node == self.bulk_node:
-            return None
-        elif self.bulk_node:
-            self.begun = True
-
+        if node==self.bulk_node:
+            return
+        
         next_node = self._downstream_node(node)
         if next_node is None:
             return None
@@ -106,7 +107,7 @@ class RiboGraphFlux(RiboGraph):
             return 0.5 ** (abs(u.position-v.position) / half_life )
         
         else:
-            raise ValueError(f"Edge: {u}, {v} is not capable of decay")
+            return 1
 
     def _is_valid(self):
         self._valid_in_out()
@@ -181,13 +182,14 @@ class RiboGraphFlux(RiboGraph):
 
     def _valid_in_out(self):
         out_flux = 0
-        for u, v, flux in self.in_edges(self.bulk_node, data='flux_end'):
+        for u,v, flux in self.in_edges(self.bulk_node, data='flux_end'):
             out_flux += flux
 
         in_flux = 0
         for node in self.successors(self.bulk_node):
             for u, v, flux in self.out_edges(node, data='flux_start'):
                 in_flux += flux
+
         if out_flux != in_flux:
             # return None
             raise ValueError(f'Flux in does not equal flux out In:{in_flux} vs Out:{out_flux}')

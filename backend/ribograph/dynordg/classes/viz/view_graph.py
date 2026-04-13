@@ -479,11 +479,14 @@ class RiboGraphVis(RiboGraph):
             ]
             return core + adjacent
 
+
+
         scanning_nodes = get_phase_nodes(0)
         core_scanning = [n for n in self.nodes if n.phase == 0]
 
         if scanning_nodes:
             min_y = min(pos[1] for pos in self._edge_position_from_nodes(scanning_nodes, exclusive=True))
+            print('scanning minY:', min_y)
             for node in scanning_nodes:
                 self._shift_node(node, -min_y, 'y')
 
@@ -499,9 +502,15 @@ class RiboGraphVis(RiboGraph):
             phase_nodes = get_phase_nodes(phase)
 
             min_phase = min(pos[1] for pos in self._edge_position_from_nodes(phase_nodes, exclusive=True))
+            print(f'min phase {phase}:', min_phase)
             if prev_nodes:
+                print(f'previous nodes: {prev_nodes}')
+                print([pos[1] for pos in self._edge_position_from_nodes(prev_nodes, exclusive=True)])
                 prev_max = max(pos[1] for pos in self._edge_position_from_nodes(prev_nodes, exclusive=True))
+    
+                print(f'previous max (phase {phase-1}):', prev_max)
                 shift = (prev_max + buffer + skip) - min_phase
+                print(f'shift phase {phase}:', shift)
                 for node in phase_nodes:
                     self._shift_node(node, shift, 'y')
 

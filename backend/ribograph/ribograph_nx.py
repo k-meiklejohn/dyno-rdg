@@ -33,9 +33,6 @@ y = dr.RiboGraphFlux.from_transition_map(x
 # plt.show()
 
 z = dr.RiboGraphVis(y)
-# for u, v, data in z.edges(data=True):
-#     print('=====================================')
-#     print(u, v)
-#     print(data)
+
 
 z.show()

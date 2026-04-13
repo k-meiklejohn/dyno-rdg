@@ -1,1 +1,1 @@
-from .view_graph import RiboGraphVis
+from .ribographviz import RiboGraphVis

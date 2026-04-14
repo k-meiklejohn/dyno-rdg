@@ -1,1 +1,1 @@
-from .classes import RiboNode, RiboEvent, RiboGraph, RiboTransition, TransitionMap, RiboGraphFlux, RiboGraphVis
+from .classes import RiboNode, RiboEvent, RiboGraph, RiboTransition, TransitionMap, RiboGraphFlux, RiboGraphVis, RNASequence

@@ -1,6 +1,6 @@
 from ...core import RiboNode
 from ...graph import RiboGraph
-from ..data import LayoutResult, EdgeSpec, Edge, EdgeSlot, EdgeGeom, EdgeType, NodeLayout, Pt
+from ..data import LayoutResult, EdgeSpec, Edge, EdgeSlot, EdgeGeom, NodeLayout, Pt
 from networkx import topological_sort
 import math
 from typing import Literal
@@ -287,6 +287,8 @@ class LayoutEngine:
                 slots=nl.out_slots, side='right', flux_key='flux_start',
             )
 
+        self._resolve_decay_anchors(layouts, geoms)
+
         self._fill_bulk_geoms(graph, specs, geoms, node_x, bulk_length_factor=2)
 
         return geoms
@@ -410,6 +412,37 @@ class LayoutEngine:
                 pt = getattr(g, f'{get_side}{pos}')
                 if pt is not None:
                     setattr(g, f'{change_side}{opp}', _shift_pt(pt, delta, 'y'))
+
+    def _resolve_decay_anchors(
+        self,
+        layouts: dict[RiboNode, NodeLayout],
+        geoms:   dict[Edge, EdgeGeom],
+    ) -> None:
+        """
+        Set decay0 on every horizontal (non-event) edge.
+ 
+        decay0 is the y-anchor where the decay wedge meets the horizontal
+        stream at the *source* node.  Its position depends on the
+        downstream node's drop_direction, which is only known after Phase 2
+        (order_nodes) has run for every node.
+ 
+        Rule (matching original logic):
+          drop_direction == -1  →  decay0 = out0  (bottom of stream)
+          drop_direction == +1  →  decay0 = out1  (top of stream)
+          no drop at v          →  decay0 not set (no wedge needed)
+        """
+        for (u, v), g in geoms.items():
+            if g.is_event:
+                continue                          # only horizontal edges
+            if g.out0 is None or g.out1 is None:
+                continue                          # geometry not filled yet
+ 
+            v_layout = layouts.get(v)
+            if v_layout is None or v_layout.drop_direction is None:
+                continue                          # downstream node has no drop
+ 
+            g.decay0 = g.out0 if v_layout.drop_direction == -1 else g.out1
+ 
 
     @staticmethod
     def _add_helper_rect(g: EdgeGeom, x: float, y: float,

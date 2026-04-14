@@ -1,5 +1,6 @@
 from .nodes import RiboNode
 from .transitions import RiboTransition
+import re
 
 class RiboEvent(tuple):
     """
@@ -15,7 +16,7 @@ class RiboEvent(tuple):
                                               RiboNode(self.position, self.frame), 
                                               self.probability))
         if self.drop_probability > 0:
-            transitions.append(self.bulk_transition)
+            transitions.append(self.bulk_transition(0))
         return transitions
     
     def _termination_transition(self):
@@ -25,7 +26,8 @@ class RiboEvent(tuple):
                                               RiboNode(self.position, 0), 
                                               self.probability))
         if self.drop_probability > 0:
-            transitions.append(self.bulk_transition)
+            transitions.append(self.bulk_transition(self.frame))
+
         return transitions
     
     def _frameshift_transition(self):
@@ -35,7 +37,7 @@ class RiboEvent(tuple):
                                                RiboNode(self.position + self.shift, 0), 
                                                self.probability))
         if self.drop_probability > 0:
-            transitions.append(self.bulk_transition)
+            transitions.append(self.bulk_transition(self.frame))
         return transitions
     
     def _ires_transition(self):
@@ -53,6 +55,16 @@ class RiboEvent(tuple):
                                             RiboNode(self.position, 0), 
                                             self.probability))
         return transitions
+    
+
+    def _end_transition(self):
+        transitions = []
+        if self.probability > 0:
+            for phase in range(4):
+                transitions.append(RiboTransition(RiboNode(self.position, phase), 
+                                                RiboNode(self.position, -1), 
+                                                self.probability))
+        return transitions
 
 
     TRANSITION_MAP = {
@@ -60,21 +72,24 @@ class RiboEvent(tuple):
         'termination':    _termination_transition,
         'frameshift': _frameshift_transition,
         'ires':  _ires_transition,
-        'cap': _cap_transition
+        'cap': _cap_transition,
+        'end': _end_transition
     }
 
-    @property
-    def bulk_transition(self):
-        return RiboTransition(RiboNode(self.position, 0), RiboNode(-1, -1), self.drop_probability)
+
+    def bulk_transition(self, phase):
+        return RiboTransition(RiboNode(self.position, phase), RiboNode(self.position, -1), self.drop_probability)
 
 
     @property
     def frame(self):
-        return self.position % 3 + 1
+        return (self.position % 3) + 1
     
+
     @property
     def shift(self):
-        return self.type.str.extract(r'shift([+-]?\d+)').astype(int)
+        match = re.search(r'shift([+-]?\d+)', self.type)
+        return int(match.group(1)) if match else 0
 
     def __new__(cls, *args):
             
@@ -94,8 +109,7 @@ class RiboEvent(tuple):
             elif not isinstance(data[1], str):
                 raise ValueError(f"Type of RiboEvent tuple must be 'str', got {type(data[1]).__name__!r}")
             elif not all(isinstance(x, (float, int)) for x in data[2:]):
-                raise ValueError(f"Probabilities of RiboEvent must be 'float' or 'int', \
-                                 got {type(x for x in data[:2] if not isinstance(x, (float, int)))}")
+                raise ValueError("Probabilities must be float or int")
             elif all(x == 0 for x in data[2:]):
                 raise ValueError(f'At least one probability must be non-zero')
             if sum(data[2:]) > 1:
@@ -113,9 +127,9 @@ class RiboEvent(tuple):
     def __repr__(self):
         return f"(Pos:{self.position}, type:{self.type}, prob:{self.probability}, drop:{self.drop_probability})"
     
-    def _to_transition(self):
+    def _to_transition(self) -> list[RiboTransition]:
         """
-        Returns a list of RiboTransitions coressponding to the event
+        Returns a list of RiboTransitions coresponding to the event
         """
         handler = self.TRANSITION_MAP.get(self.type)
         if handler is None:

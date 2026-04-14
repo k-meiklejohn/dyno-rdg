@@ -12,20 +12,11 @@ the COLOR_DICT / STYLE_DICT on RiboRenderer.  The layout maths is untouched.
 """
 
 from __future__ import annotations
-
-import math
-from dataclasses import dataclass, field
-from typing import Any
-
+from dataclasses import dataclass
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.path import Path
-from networkx import topological_sort
-
-from ...core import RiboNode
-from ...graph import RiboGraph
-from ...simulation import RiboGraphFlux
 from ..data import EdgeGeom, LayoutResult
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,15 +94,15 @@ class EdgePainter:
         g = self.geom
 
         if g.decay0 is None or g.decay1 is None or g.decay2 is None:
+
             return []
 
         if g.decay1 == g.decay2:
             return []
-
         patch = self._rect_patch(
             [g.decay0, g.decay1, g.decay2],
-            facecolor=self.style.facecolor,
-            edgecolor=self.style.edgecolor,
+            facecolor='purple',
+            edgecolor='purple',
         )
         return [RenderPrimitive(patch, zorder=self.style.zorder - 1)]
 
@@ -177,15 +168,12 @@ class EdgePainter:
     ) -> mpatches.PathPatch:
         """Curved tapered cap for event-edge endpoints."""
         x, y   = centre
-        depth  = self.TAPER_DEPTH_SCALE * flux
         x_sign = -1 if quad in (1, 4) else 1
         y_sign =  1 if quad in (1, 2) else -1
 
         if inout == 'out':
             verts = [
-                (x + x_sign * depth, y),
-                (x,                  y + y_sign * flux / 2),
-                (x + x_sign * depth, y + y_sign * flux),
+                (x, y),
                 (x,                  y + y_sign * flux),
                 (x - x_sign * flux,  y + y_sign * flux),
                 (x - x_sign * flux,  y),
@@ -193,16 +181,14 @@ class EdgePainter:
         else:  # 'in'
             verts = [
                 (x,                  y),
-                (x + depth * x_sign, y + y_sign * flux / 2),
-                (x,                  y + y_sign * flux),
                 (x,                  y + y_sign * flux),
                 (x - x_sign * flux,  y + y_sign * flux),
                 (x - x_sign * flux,  y),
             ]
 
         codes = [
-            Path.MOVETO, Path.LINETO, Path.LINETO,
-            Path.LINETO, Path.CURVE3, Path.CURVE3,
+            Path.MOVETO, Path.LINETO,
+            Path.CURVE3, Path.CURVE3,
         ]
         return mpatches.PathPatch(Path(verts, codes), **self._patch_kwargs())
 
@@ -281,7 +267,7 @@ class RiboRenderer:
 
         return EdgeStyle(
             facecolor=color,
-            edgecolor='white',
+            edgecolor=color,
             **overrides,
         )
 

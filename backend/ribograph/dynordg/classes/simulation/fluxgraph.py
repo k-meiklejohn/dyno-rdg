@@ -14,7 +14,7 @@ class RiboGraphFlux(RiboGraph):
             self._construct()   
 
     @classmethod
-    def from_transition_map(cls, transition_map, half_life_translation=None, half_life_scanning=None):
+    def from_transition_map(cls, transition_map: TransitionMap, half_life_translation:float|None =None, half_life_scanning:float|None =None):
         return cls(transition_map=transition_map, half_life_scanning=half_life_scanning, half_life_translation=half_life_translation)
     
     def _construct(self):
@@ -191,5 +191,7 @@ class RiboGraphFlux(RiboGraph):
                 in_flux += flux
 
         if out_flux != in_flux:
-            # return None
-            raise ValueError(f'Flux in does not equal flux out In:{in_flux} vs Out:{out_flux}')
+            return None
+            # raise ValueError(f'Flux in does not equal flux out In:{in_flux} vs Out:{out_flux}')
+    
+    

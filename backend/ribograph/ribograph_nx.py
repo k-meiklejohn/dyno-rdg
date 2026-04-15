@@ -36,5 +36,5 @@ y = dr.RiboGraphFlux.from_transition_map(nsun2.transition_map
 
 z = dr.RiboGraphVis(y)
 
-
 z.show()
+z.save(filename='output.svg', dpi=1400)

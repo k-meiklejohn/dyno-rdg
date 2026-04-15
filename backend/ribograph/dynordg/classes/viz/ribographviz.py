@@ -20,6 +20,7 @@ from ..graph import RiboGraph
 from ..simulation import RiboGraphFlux
 from .data import LayoutResult, Pt
 from .render import LayoutEngine, RiboRenderer
+import matplotlib.pyplot as plt
 
 
 class RiboGraphVis(RiboGraph):
@@ -59,9 +60,16 @@ class RiboGraphVis(RiboGraph):
         self.fig = self.renderer.render(self.layout_result)
 
     def show(self) -> None:
-        import matplotlib.pyplot as plt
         plt.figure(self.fig)
         plt.show()
+
+    def save(self, filename='output.png', dpi=150, format:str|None=None, **kwargs):
+        """
+        Save generated plot to 'filename' using matplotlib savefig 
+        """
+        plt.figure(self.fig)
+        plt.savefig(filename, format=format, dpi=dpi, **kwargs)
+
 
     @property
     def positions(self) -> list[Pt]:

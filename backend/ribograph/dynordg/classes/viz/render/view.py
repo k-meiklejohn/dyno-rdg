@@ -144,7 +144,7 @@ class EdgePainter:
             facecolor=self.style.facecolor,
             edgecolor=self.style.edgecolor,
             alpha=self.style.alpha,
-            linewidth=self.style.linewidth,
+            linewidth=0,
         )
         kw.update(overrides)
         return kw
@@ -241,6 +241,7 @@ class RiboRenderer:
 
         primitives = self._collect_primitives(graph)
         for prim in sorted(primitives, key=lambda p: p.zorder):
+            prim.patch.set_transform(ax.transData)
             ax.add_patch(prim.patch)
 
         fig.tight_layout()

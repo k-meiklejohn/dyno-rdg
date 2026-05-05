@@ -6,7 +6,6 @@ Replaces the web frontend entirely. No ports, no browser needed.
 import csv
 import io
 import json
-import math
 import threading
 import traceback
 import tkinter as tk
@@ -14,11 +13,9 @@ from tkinter import ttk, filedialog, messagebox
 
 # Pre-import heavy packages in main thread to avoid numpy threading issues
 import matplotlib
-import networkx
-import numpy
-import pandas
+matplotlib.use('Agg')
 from PIL import Image, ImageTk
-from backend.render import render_svg
+from backend.render_new import render_figure
 
 # ── Colours (matching the web UI palette) ──────────────────────────────────
 BG       = "#0e0f11"
@@ -789,37 +786,32 @@ class App(tk.Tk):
         self.svg_canvas.clear("Modified — press Enter or Tab to render")
 
     def _render(self):
-        rows   = self.row_table.rows
-        params = self.param_panel.get_values()
+            rows   = self.row_table.rows
+            params = self.param_panel.get_values()
 
-        self.svg_canvas.show_loading()
-        self._render_gen += 1
-        my_gen = self._render_gen  # capture at dispatch time
+            self.svg_canvas.show_loading()
+            self._render_gen += 1
+            my_gen = self._render_gen
 
-        def do_render():
-            try:
-                result = render_svg([dict(r) for r in rows], params)
+            def do_render():
+                try:
+                    # ── was: result = render_svg([dict(r) for r in rows], params)
+                    svg_text, png_bytes = render_figure([dict(r) for r in rows], params)
 
-                if isinstance(result, tuple):
-                    svg_text, png_bytes = result
-                else:
-                    svg_text, png_bytes = result, None
+                    if my_gen != self._render_gen:
+                        return
 
-                # Discard if a newer render has already been dispatched
-                if my_gen != self._render_gen:
-                    return
+                    if isinstance(svg_text, str) and ('<svg' in svg_text or '<?xml' in svg_text):
+                        self.after(0, lambda s=svg_text, p=png_bytes: self.svg_canvas.load_svg(s, p))
+                    else:
+                        msg = svg_text if isinstance(svg_text, str) else "Unknown error"
+                        self.after(0, lambda m=msg: self.svg_canvas.clear(f"⚠ {m}"))
+                except Exception as e:
+                    traceback.print_exc()
+                    if my_gen == self._render_gen:
+                        self.after(0, lambda m=str(e): self.svg_canvas.clear(f"Error: {m}"))
 
-                if isinstance(svg_text, str) and ('<?xml' in svg_text or '<svg' in svg_text):
-                    self.after(0, lambda s=svg_text, p=png_bytes: self.svg_canvas.load_svg(s, p))
-                else:
-                    msg = svg_text if isinstance(svg_text, str) else "Unknown error"
-                    self.after(0, lambda m=msg: self.svg_canvas.clear(f"⚠ {m}"))
-            except Exception as e:
-                traceback.print_exc()
-                if my_gen == self._render_gen:
-                    self.after(0, lambda m=str(e): self.svg_canvas.clear(f"Error: {m}"))
-
-        threading.Thread(target=do_render, daemon=True).start()
+            threading.Thread(target=do_render, daemon=True).start()
 
     def _save_json(self):
         path = filedialog.asksaveasfilename(
@@ -1139,12 +1131,3 @@ class App(tk.Tk):
             with open(path, "wb") as f:
                 f.write(png_bytes)
 
-
-if __name__ == "__main__":
-    import multiprocessing
-    multiprocessing.freeze_support()
-
-    matplotlib.use('Agg')
-
-    app = App()
-    app.mainloop()

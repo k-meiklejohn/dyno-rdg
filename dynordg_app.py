@@ -535,7 +535,7 @@ class App(tk.Tk):
         header.pack(fill="x", side="top"); header.pack_propagate(False)
         tk.Label(header, text="DYNO  RDG", bg=SURFACE, fg=ACCENT,
                  font=STYLE["font_header"]).pack(side="left", padx=20)
-        tk.Label(header, text="v2.0.0", bg=SURFACE, fg=MUTED,
+        tk.Label(header, text="v2.0.1", bg=SURFACE, fg=MUTED,
                  font=("Courier",9)).pack(side="right", padx=20)
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 

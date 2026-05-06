@@ -21,9 +21,6 @@ The app can then be run by double clicking the file, or running
 ./dyno-rdg-linux
 ```
 
-Running from terminal also allows you to see the edgelist from which the graph is derived
-
-
 #### MacOS
 
 The has a quarantine attribute when downloaded. To overcome this control-click the executable and choose open. Choose open in the following dialogue box.

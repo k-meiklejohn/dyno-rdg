@@ -18,7 +18,7 @@ jobs:
             output: dyno-rdg-windows.exe
           - os: macos-latest
             output: dyno-rdg-mac
-      fail-fast: false  # ← don't cancel other platforms if one fails
+      fail-fast: true  # ← don't cancel other platforms if one fails
 
     runs-on: ${{ matrix.os }}
 
@@ -44,27 +44,17 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           python -m nuitka \
-            --standalone \
-            --onefile \
-            --enable-plugin=tk-inter \
-            --nofollow-import-to=IPython \
-            --nofollow-import-to=pandas.tests \
-            --nofollow-import-to=numpy.tests \
-            --nofollow-import-to=matplotlib.tests \
-            --nofollow-import-to=PyQt6 \
-            --nofollow-import-to=PyQt5 \
-            --nofollow-import-to=PySide2 \
-            --nofollow-import-to=PySide6 \
-            --include-package=backend \
-            --include-package=numpy \
-            --include-package=pandas \
-            --include-package=networkx \
-            --include-package=matplotlib.backends \
-            --include-package-data=numpy \
-            --include-package-data=pandas \
-            --include-package-data=matplotlib \
-            --output-filename=${{ matrix.output }} \
-            app_tk.py
+          --standalone \
+          --onefile  \
+          --nofollow-import-to=IPython \
+          --noinclude-default-mode=error \
+          --nofollow-import-to=doctest \
+          --enable-plugin=tk-inter \
+          --static-libpython=no \
+          --include-package-data=dynordg \
+          --include-package=matplotlib.backends \
+          --output-filename=${{ matrix.output }} \
+          dynordg_app.py
 
 
       - name: Build Windows
@@ -73,26 +63,16 @@ jobs:
           python -m nuitka `
             --standalone `
             --assume-yes-for-downloads `
-            --onefile `
-            --enable-plugin=tk-inter `
+            --onefile  `
             --nofollow-import-to=IPython `
-            --nofollow-import-to=pandas.tests `
-            --nofollow-import-to=numpy.tests `
-            --nofollow-import-to=matplotlib.tests `
-            --nofollow-import-to=PyQt6 `
-            --nofollow-import-to=PyQt5 `
-            --nofollow-import-to=PySide2 `
-            --nofollow-import-to=PySide6 `
-            --include-package=backend `
-            --include-package=numpy `
-            --include-package=pandas `
-            --include-package=networkx `
+            --noinclude-default-mode=error `
+            --nofollow-import-to=doctest `
+            --enable-plugin=tk-inter `
+            --static-libpython=no `
+            --include-package-data=dynordg `
             --include-package=matplotlib.backends `
-            --include-package-data=numpy `
-            --include-package-data=pandas `
-            --include-package-data=matplotlib `
             --output-filename=${{ matrix.output }} `
-            app_tk.py
+            dynordg_app.py
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2.3.2

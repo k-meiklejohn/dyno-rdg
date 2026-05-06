@@ -1,1 +1,2 @@
 dynordg>=0.2.2
+pillow>=12.2.0

@@ -31,3 +31,18 @@ sudo xattr -r -d com.apple.quarantine dyno-rdg-mac
 ```
 
 #### Windows
+
+The dynor
+
+
+### Tkinter App
+
+#### Prerequisites
+
+
+
+If you wish to run the python source script, it is reccomened you do this in a virtual environment.
+
+First create and activate a venv
+```bash
+python -m venv dynordg
